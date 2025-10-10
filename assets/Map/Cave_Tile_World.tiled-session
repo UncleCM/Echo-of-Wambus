@@ -1,0 +1,20 @@
+{
+    "Map/SizeTest": {
+        "height": 4300,
+        "width": 2
+    },
+    "activeFile": "",
+    "expandedProjectPaths": [
+    ],
+    "file.lastUsedOpenFilter": "ไฟล์ทั้งหมด (*)",
+    "fileStates": {
+    },
+    "last.imagePath": "C:/Users/CM/Documents/GitHub/Echo-of-Wambus/assets/Map/Anim",
+    "map.fixedSize": false,
+    "openFiles": [
+    ],
+    "project": "Cave_Tile_World.tiled-project",
+    "recentFiles": [
+    ],
+    "tileset.lastUsedFormat": "tsx"
+}
