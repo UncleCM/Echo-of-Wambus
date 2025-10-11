@@ -3,18 +3,75 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "",
+    "activeFile": "Inf.tmx",
     "expandedProjectPaths": [
+        ".",
+        "Tile"
     ],
     "file.lastUsedOpenFilter": "ไฟล์ทั้งหมด (*)",
     "fileStates": {
+        "40x4-0_map.tmx": {
+            "scale": 5.5,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 39.18181818181817,
+                "y": 71.36363636363637
+            }
+        },
+        "70-x-70_map.tmx": {
+            "scale": 0.75,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 270,
+                "y": 197.99999999999994
+            }
+        },
+        "Inf.tmx": {
+            "scale": 0.5,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 889,
+                "y": -51
+            }
+        },
+        "Tile/MainLev2.0.tsx": {
+            "scaleInDock": 0.5,
+            "scaleInEditor": 1
+        },
+        "Tile/cave.tsx": {
+            "scaleInDock": 2,
+            "scaleInEditor": 1
+        },
+        "Tile/decorative.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 1
+        }
     },
-    "last.imagePath": "C:/Users/CM/Documents/GitHub/Echo-of-Wambus/assets/Map/Anim",
+    "last.imagePath": "C:/Users/CM/Downloads",
     "map.fixedSize": false,
+    "map.height": 40,
+    "map.lastUsedFormat": "tmx",
+    "map.tileHeight": 16,
+    "map.tileWidth": 16,
+    "map.width": 40,
     "openFiles": [
+        "Tile/decorative.tsx",
+        "Tile/MainLev2.0.tsx",
+        "Tile/cave.tsx",
+        "Inf.tmx"
     ],
     "project": "Cave_Tile_World.tiled-project",
     "recentFiles": [
+        "Tile/decorative.tsx",
+        "Tile/MainLev2.0.tsx",
+        "Tile/cave.tsx",
+        "Inf.tmx",
+        "40x4-0_map.tmx",
+        "70-x-70_map.tmx"
     ],
-    "tileset.lastUsedFormat": "tsx"
+    "tileset.lastUsedFormat": "tsx",
+    "tileset.tileSize": {
+        "height": 16,
+        "width": 16
+    }
 }
