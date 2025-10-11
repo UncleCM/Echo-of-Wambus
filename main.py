@@ -35,7 +35,11 @@ class Game:
             # Draw everything
             self.screen.fill((50, 50, 50))  # Gray background
             
-            # Debug: Draw a red rectangle where the player should be
+            # Debug: Draw a cyan rectangle behind player
+            debug_rect = self.player.rect.inflate(10, 10)
+            pygame.draw.rect(self.screen, (0, 255, 255), debug_rect)
+            
+            # Debug: Draw a red rectangle where the player rect is
             pygame.draw.rect(self.screen, (255, 0, 0), self.player.rect, 2)
             
             # Draw sprites

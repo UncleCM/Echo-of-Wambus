@@ -10,8 +10,10 @@ class Player(pygame.sprite.Sprite):
         self.scale_factor = 3  # Scale up the sprite for visibility
         
         # Animation settings
-        self.animation_speed = 0.15
         self.frame_index = 0
+        self.animation_timer = 0
+        self.frame_duration = 0.05  # Fast frame rate since we have 24 frames
+        self.previous_animation = 'idle_down'
         
         # Load animations from sprite strip files
         self.animations = self.load_animations()
@@ -79,21 +81,22 @@ class Player(pygame.sprite.Sprite):
             # Calculate number of frames
             num_frames = strip_width // self.frame_width
             
-            # Extract each frame
+            # Extract frames - USE ALL FRAMES
             frames = []
-            for i in range(num_frames):
-                # Use subsurface to extract the frame directly
+            
+            for i in range(num_frames):  # Use ALL frames
+                # Extract the full height frame
                 frame_rect = pygame.Rect(i * self.frame_width, 0, self.frame_width, self.frame_height)
                 frame = sprite_strip.subsurface(frame_rect).copy()
                 
-                # Scale up the frame for visibility
+                # Scale up the frame for visibility  
                 scaled_frame = pygame.transform.scale(frame, 
                     (self.frame_width * self.scale_factor, self.frame_height * self.scale_factor))
                 
                 frames.append(scaled_frame)
             
             if frames:
-                print(f"Successfully loaded {len(frames)} frames from {filepath}")
+                print(f"Successfully loaded {len(frames)} frames from {filepath} (sampled from {num_frames} total)")
                 return frames
             else:
                 # Create placeholder with scaled size
@@ -165,15 +168,32 @@ class Player(pygame.sprite.Sprite):
             else:
                 self.current_animation = 'idle_down'
         
-        # Update frame index
+        # Reset animation if state changed
+        if self.current_animation != self.previous_animation:
+            self.frame_index = 0
+            self.animation_timer = 0
+            self.previous_animation = self.current_animation
+        
+        # Get current animation frames
         animation_frames = self.animations.get(self.current_animation, [])
-        if animation_frames:
-            self.frame_index += self.animation_speed
+        
+        if not animation_frames:
+            return
+        
+        # Update animation timer
+        self.animation_timer += dt
+        
+        # Check if it's time to advance to next frame
+        if self.animation_timer >= self.frame_duration:
+            self.animation_timer = 0
+            self.frame_index += 1
             if self.frame_index >= len(animation_frames):
                 self.frame_index = 0
-            
-            # Update image
-            self.image = animation_frames[int(self.frame_index)]
+        
+        # Always update the image to current frame
+        old_center = self.rect.center
+        self.image = animation_frames[self.frame_index]
+        self.rect = self.image.get_rect(center=old_center)
     
     def move(self, dt):
         """Move the player"""
