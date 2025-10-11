@@ -3,12 +3,12 @@ from Settings import *
 class Player(pygame.sprite.Sprite):
     def __init__(self, pos, groups, collision_sprites):
         super().__init__(groups)
-        
+    
         # Frame settings - adjust these based on your sprite size
         self.frame_width = 48  # Width of each individual frame (384/8 = 48)
         self.frame_height = 64  # Height of each frame
         self.scale_factor = 2  # Scale up 2x for better visibility
-        
+        self.z = 1 # Draw on top of tiles (tiles are z=0)
         # Animation settings
         self.animation_timer = 0
         self.animation_speed = 12  # Frames per second
@@ -24,17 +24,16 @@ class Player(pygame.sprite.Sprite):
         # Current animation state
         self.current_animation = 'idle_down'
         self.image = self.animations[self.current_animation][0]
-        self.rect = self.image.get_rect(center=pos)  # Use center instead of topleft
-        self.hitbox_rect = self.rect.inflate(-70,-70) # Decrease empty space of hitbox
+        self.rect = self.image.get_rect(center=pos)
+        self.hitbox_rect = self.rect.inflate(-75, -75)  # Better hitbox size (was -70, -70)
 
         print(f"First frame size: {self.image.get_size()}")
         
         # Movement
         self.direction = pygame.math.Vector2()
-        self.speed = 200
+        self.speed = 100
         self.facing = 'down'
         self.collision_sprites = collision_sprites
-        
     def load_animations(self):
         """Load all animation frames from sprite strip files"""
         animations = {}
@@ -231,11 +230,21 @@ class Player(pygame.sprite.Sprite):
         self.animate(dt)
 
     def collision(self, direction):
+        """Handle collision with collision sprites"""
         for sprite in self.collision_sprites:
             if sprite.rect.colliderect(self.hitbox_rect):
                 if direction == 'horizontal':
-                    if self.direction.x > 0: self.hitbox_rect.right = sprite.rect.left
-                    if self.direction.x < 0: self.hitbox_rect.left = sprite.rect.right
-                else:
-                    if self.direction.y < 0: self.hitbox_rect.top = sprite.rect.bottom
-                    if self.direction.y > 0: self.hitbox_rect.bottom = sprite.rect.top
+                    # Moving right - hit left side of wall
+                    if self.direction.x > 0:
+                        self.hitbox_rect.right = sprite.rect.left
+                    # Moving left - hit right side of wall
+                    if self.direction.x < 0:
+                        self.hitbox_rect.left = sprite.rect.right
+                
+                if direction == 'vertical':
+                    # Moving down - hit top of wall
+                    if self.direction.y > 0:
+                        self.hitbox_rect.bottom = sprite.rect.top
+                    # Moving up - hit bottom of wall
+                    if self.direction.y < 0:
+                        self.hitbox_rect.top = sprite.rect.bottom
