@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="40" height="40" tilewidth="16" tileheight="16" infinite="1" nextlayerid="7" nextobjectid="16">
- <tileset firstgid="1" source="Tile/cave.tsx"/>
- <tileset firstgid="1001" source="Tile/MainLev2.0.tsx"/>
+<?xml version='1.0' encoding='UTF-8'?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="80" height="80" tilewidth="16" tileheight="16" infinite="0" nextlayerid="6" nextobjectid="3">
+ <tileset firstgid="1" source="Tile/cave.tsx" />
+ <tileset firstgid="1001" source="Tile/MainLev2.0.tsx" />
  <layer id="2" name="Floor" width="40" height="40">
   <data encoding="csv">
    <chunk x="-16" y="-16" width="16" height="16">
@@ -2088,9 +2088,4 @@
 </chunk>
   </data>
  </layer>
- <objectgroup id="6" name="Collision">
-  <object id="13" x="31.75" y="-48.25">
-   <polygon points="0,0 48,0.5 48.25,16 144,16.25 144.25,31.25 239.25,32.25 239.25,50.25 286.25,49.25 289.25,190.25 244.25,192.25 234.25,177.25 149.25,177.25 138.25,158.25 48.25,160.25 45.25,146.25 1.25,142.25"/>
-  </object>
- </objectgroup>
 </map>

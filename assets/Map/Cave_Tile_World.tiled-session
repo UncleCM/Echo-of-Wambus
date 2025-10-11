@@ -5,8 +5,8 @@
     },
     "activeFile": "Inf.tmx",
     "expandedProjectPaths": [
-        ".",
-        "Tile"
+        "Tile",
+        "."
     ],
     "file.lastUsedOpenFilter": "ไฟล์ทั้งหมด (*)",
     "fileStates": {
@@ -27,11 +27,11 @@
             }
         },
         "Inf.tmx": {
-            "scale": 0.5,
+            "scale": 2,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 889,
-                "y": -51
+                "x": 153.75,
+                "y": 53.25
             }
         },
         "Tile/MainLev2.0.tsx": {
