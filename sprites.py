@@ -1,8 +1,28 @@
 from Settings import *
 
+class Tile(pygame.sprite.Sprite):
+    def __init__(self, pos, surf, groups, scale=2):
+        super().__init__(groups)
+        # Scale the tile
+        scaled_size = (surf.get_width() * scale, surf.get_height() * scale)
+        self.image = pygame.transform.scale(surf, scaled_size)
+        # Adjust position for scaled tiles
+        self.rect = self.image.get_rect(topleft=(pos[0] * scale, pos[1] * scale))
+
 class CollisionSprite(pygame.sprite.Sprite):
-    def __init__(self, pos, size, all_sprites, collision_sprites):
-        super().__init__(all_sprites, collision_sprites)
+    """Invisible collision boxes from object layer"""
+    def __init__(self, pos, size, *groups):
+        super().__init__(*groups)
         self.image = pygame.Surface(size)
         self.image.fill('red')
-        self.rect = self.image.get_rect(center = pos)
+        self.image.set_alpha(128)  # Semi-transparent for debugging
+        self.rect = self.image.get_rect(topleft=pos)
+
+class FallZone(pygame.sprite.Sprite):
+    """Invisible fall zones that trigger game over"""
+    def __init__(self, pos, size, *groups):
+        super().__init__(*groups)
+        self.image = pygame.Surface(size)
+        self.image.fill('yellow')
+        self.image.set_alpha(128)  # Semi-transparent for debugging
+        self.rect = self.image.get_rect(topleft=pos)

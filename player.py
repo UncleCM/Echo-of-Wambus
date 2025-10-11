@@ -25,6 +25,7 @@ class Player(pygame.sprite.Sprite):
         self.current_animation = 'idle_down'
         self.image = self.animations[self.current_animation][0]
         self.rect = self.image.get_rect(center=pos)  # Use center instead of topleft
+        self.hitbox_rect = self.rect.inflate(-70,-70) # Decrease empty space of hitbox
 
         print(f"First frame size: {self.image.get_size()}")
         
@@ -213,10 +214,14 @@ class Player(pygame.sprite.Sprite):
     
     def move(self, dt):
         """Move the player"""
-        self.rect.x += self.direction.x * self.speed * dt
+        self.hitbox_rect.x += self.direction.x * self.speed * dt
         self.collision('horizontal')
-        self.rect.y += self.direction.y * self.speed * dt
+        self.hitbox_rect.y += self.direction.y * self.speed * dt
         self.collision('vertical')
+
+        self.rect.center = self.hitbox_rect.center
+
+
 
     
     def update(self, dt):
@@ -227,10 +232,10 @@ class Player(pygame.sprite.Sprite):
 
     def collision(self, direction):
         for sprite in self.collision_sprites:
-            if sprite.rect.colliderect(self.rect):
+            if sprite.rect.colliderect(self.hitbox_rect):
                 if direction == 'horizontal':
-                    if self.direction.x > 0: self.rect.right = sprite.rect.left
-                    if self.direction.x < 0: self.rect.left = sprite.rect.right
+                    if self.direction.x > 0: self.hitbox_rect.right = sprite.rect.left
+                    if self.direction.x < 0: self.hitbox_rect.left = sprite.rect.right
                 else:
-                    if self.direction.y < 0: self.rect.top = sprite.rect.bottom
-                    if self.direction.y > 0: self.rect.bottom = sprite.rect.top
+                    if self.direction.y < 0: self.hitbox_rect.top = sprite.rect.bottom
+                    if self.direction.y > 0: self.hitbox_rect.bottom = sprite.rect.top
