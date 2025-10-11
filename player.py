@@ -6,7 +6,8 @@ class Player(pygame.sprite.Sprite):
         
         # Frame settings - adjust these based on your sprite size
         self.frame_width = 16  # Width of each individual frame
-        self.frame_height = 16  # Height of each frame
+        self.frame_height = 64  # Height of each frame (sprites are tall!)
+        self.scale_factor = 3  # Scale up the sprite for visibility
         
         # Animation settings
         self.animation_speed = 0.15
@@ -15,10 +16,16 @@ class Player(pygame.sprite.Sprite):
         # Load animations from sprite strip files
         self.animations = self.load_animations()
         
+        print(f"Loaded {len(self.animations)} animation states")
+        for anim_name, frames in self.animations.items():
+            print(f"  {anim_name}: {len(frames)} frames")
+        
         # Current animation state
         self.current_animation = 'idle_down'
         self.image = self.animations[self.current_animation][0]
-        self.rect = self.image.get_rect(topleft=pos)
+        self.rect = self.image.get_rect(center=pos)  # Use center instead of topleft
+        
+        print(f"First frame size: {self.image.get_size()}")
         
         # Movement
         self.direction = pygame.math.Vector2()
@@ -67,23 +74,41 @@ class Player(pygame.sprite.Sprite):
             strip_width = sprite_strip.get_width()
             strip_height = sprite_strip.get_height()
             
+            print(f"Loading {filepath}: {strip_width}x{strip_height}")
+            
             # Calculate number of frames
             num_frames = strip_width // self.frame_width
             
             # Extract each frame
             frames = []
             for i in range(num_frames):
-                # Create a surface for this frame
-                frame = pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA)
-                # Copy the frame from the sprite strip
-                frame.blit(sprite_strip, (0, 0), (i * self.frame_width, 0, self.frame_width, self.frame_height))
-                frames.append(frame)
+                # Use subsurface to extract the frame directly
+                frame_rect = pygame.Rect(i * self.frame_width, 0, self.frame_width, self.frame_height)
+                frame = sprite_strip.subsurface(frame_rect).copy()
+                
+                # Scale up the frame for visibility
+                scaled_frame = pygame.transform.scale(frame, 
+                    (self.frame_width * self.scale_factor, self.frame_height * self.scale_factor))
+                
+                frames.append(scaled_frame)
             
-            return frames if frames else [pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA)]
+            if frames:
+                print(f"Successfully loaded {len(frames)} frames from {filepath}")
+                return frames
+            else:
+                # Create placeholder with scaled size
+                placeholder = pygame.Surface((self.frame_width * self.scale_factor, 
+                                            self.frame_height * self.scale_factor), pygame.SRCALPHA)
+                pygame.draw.rect(placeholder, (255, 0, 255), placeholder.get_rect(), 2)
+                return [placeholder]
             
         except FileNotFoundError:
             print(f"Warning: Could not load sprite strip: {filepath}")
-            return [pygame.Surface((self.frame_width, self.frame_height), pygame.SRCALPHA)]
+            # Create placeholder with scaled size
+            placeholder = pygame.Surface((self.frame_width * self.scale_factor, 
+                                        self.frame_height * self.scale_factor), pygame.SRCALPHA)
+            pygame.draw.rect(placeholder, (255, 0, 255), placeholder.get_rect(), 2)
+            return [placeholder]
     
     def input(self):
         """Handle player input"""

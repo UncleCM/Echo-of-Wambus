@@ -9,17 +9,44 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
 
-        self.player = Player((400, 300), (pygame.sprite.Group(), pygame.sprite.Group()))
+        # Create sprite groups
+        self.all_sprites = pygame.sprite.Group()
+        
+        # Create player and add to sprite group
+        self.player = Player((WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2), self.all_sprites)
+        
+        print(f"Player created at position: {self.player.rect.topleft}")
+        print(f"Player size: {self.player.rect.size}")
+        print(f"Number of animations loaded: {len(self.player.animations)}")
 
     def run(self):
         while self.running:
-
+            # Delta time in seconds
             dt = self.clock.tick(60) / 1000.0
 
+            # Event handling
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-        
+            
+            # Update all sprites
+            self.all_sprites.update(dt)
+            
+            # Draw everything
+            self.screen.fill((50, 50, 50))  # Gray background
+            
+            # Debug: Draw a red rectangle where the player should be
+            pygame.draw.rect(self.screen, (255, 0, 0), self.player.rect, 2)
+            
+            # Draw sprites
+            self.all_sprites.draw(self.screen)
+            
+            # Debug info on screen
+            font = pygame.font.Font(None, 36)
+            debug_text = font.render(f"Player pos: {self.player.rect.topleft} | Animation: {self.player.current_animation}", True, (255, 255, 255))
+            self.screen.blit(debug_text, (10, 10))
+            
+            # Update display
             pygame.display.update()
 
         pygame.quit()
