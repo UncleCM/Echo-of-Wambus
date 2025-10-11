@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="80" height="70" tilewidth="16" tileheight="16" infinite="0" nextlayerid="15" nextobjectid="180">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="80" height="70" tilewidth="16" tileheight="16" infinite="0" nextlayerid="15" nextobjectid="182">
  <tileset firstgid="1" source="Tile/cave.tsx"/>
  <tileset firstgid="1001" source="Tile/MainLev2.0.tsx"/>
  <tileset firstgid="10793" source="Tile/decorative.tsx"/>
@@ -810,5 +810,6 @@
   <object id="147" x="708" y="198.125" width="9.125" height="6.25"/>
   <object id="148" x="899.182" y="213.727" width="9.54545" height="7"/>
   <object id="149" x="1090.64" y="102.091" width="10.7273" height="7.18182"/>
+  <object id="181" x="35.5" y="116.25" width="9.25" height="9.5"/>
  </objectgroup>
 </map>
