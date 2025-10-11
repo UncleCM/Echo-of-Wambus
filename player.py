@@ -5,14 +5,13 @@ class Player(pygame.sprite.Sprite):
         super().__init__(groups)
         
         # Frame settings - adjust these based on your sprite size
-        self.frame_width = 16  # Width of each individual frame
-        self.frame_height = 64  # Height of each frame (sprites are tall!)
-        self.scale_factor = 3  # Scale up the sprite for visibility
+        self.frame_width = 48  # Width of each individual frame (384/8 = 48)
+        self.frame_height = 64  # Height of each frame
+        self.scale_factor = 2  # Scale up 2x for better visibility
         
         # Animation settings
-        self.frame_index = 0
         self.animation_timer = 0
-        self.frame_duration = 0.05  # Fast frame rate since we have 24 frames
+        self.animation_speed = 12  # Frames per second
         self.previous_animation = 'idle_down'
         
         # Load animations from sprite strip files
@@ -49,10 +48,14 @@ class Player(pygame.sprite.Sprite):
         # Walk animations
         animations['walk_down'] = self.load_sprite_strip('Player/Walk/walk_Down.png')
         animations['walk_up'] = self.load_sprite_strip('Player/Walk/walk_Up.png')
-        animations['walk_left'] = self.load_sprite_strip('Player/Walk/walk_Left_Down.png')
-        animations['walk_right'] = self.load_sprite_strip('Player/Walk/walk_Right_Down.png')
+        animations['walk_left_down'] = self.load_sprite_strip('Player/Walk/walk_Left_Down.png')
+        animations['walk_right_down'] = self.load_sprite_strip('Player/Walk/walk_Right_Down.png')
         animations['walk_left_up'] = self.load_sprite_strip('Player/Walk/walk_Left_Up.png')
         animations['walk_right_up'] = self.load_sprite_strip('Player/Walk/walk_Right_Up.png')
+        
+        # Aliases for simpler left/right (use left_down and right_down as defaults)
+        animations['walk_left'] = animations['walk_left_down']
+        animations['walk_right'] = animations['walk_right_down']
         
         # Optional: Dash animations
         try:
@@ -78,22 +81,26 @@ class Player(pygame.sprite.Sprite):
             
             print(f"Loading {filepath}: {strip_width}x{strip_height}")
             
-            # Calculate number of frames
+            # Calculate number of frames (should be 8 for 384px wide sprites)
             num_frames = strip_width // self.frame_width
+            
+            print(f"  Extracting {num_frames} frames of {self.frame_width}x{self.frame_height}")
             
             # Extract frames - USE ALL FRAMES
             frames = []
             
-            for i in range(num_frames):  # Use ALL frames
+            for i in range(num_frames):  # Use ALL 8 frames
                 # Extract the full height frame
                 frame_rect = pygame.Rect(i * self.frame_width, 0, self.frame_width, self.frame_height)
                 frame = sprite_strip.subsurface(frame_rect).copy()
                 
-                # Scale up the frame for visibility  
-                scaled_frame = pygame.transform.scale(frame, 
-                    (self.frame_width * self.scale_factor, self.frame_height * self.scale_factor))
-                
-                frames.append(scaled_frame)
+                # Scale if needed
+                if self.scale_factor != 1:
+                    scaled_frame = pygame.transform.scale(frame, 
+                        (self.frame_width * self.scale_factor, self.frame_height * self.scale_factor))
+                    frames.append(scaled_frame)
+                else:
+                    frames.append(frame)
             
             if frames:
                 print(f"Successfully loaded {len(frames)} frames from {filepath} (sampled from {num_frames} total)")
@@ -144,21 +151,35 @@ class Player(pygame.sprite.Sprite):
         """Update animation frames"""
         # Determine animation state based on movement
         if self.direction.magnitude() > 0:
-            # Moving
-            if self.direction.y < 0 and self.direction.x < 0:
+            # Moving - determine direction including diagonals
+            if self.direction.y > 0 and self.direction.x < 0:
+                # Moving down-left
+                self.current_animation = 'walk_left_down'
+                self.facing = 'left'
+            elif self.direction.y > 0 and self.direction.x > 0:
+                # Moving down-right
+                self.current_animation = 'walk_right_down'
+                self.facing = 'right'
+            elif self.direction.y < 0 and self.direction.x < 0:
                 self.current_animation = 'walk_left_up'
+                self.facing = 'left'
             elif self.direction.y < 0 and self.direction.x > 0:
                 self.current_animation = 'walk_right_up'
+                self.facing = 'right'
             elif self.direction.x < 0:
-                self.current_animation = 'walk_left'
+                self.current_animation = 'walk_left_down'
+                self.facing = 'left'
             elif self.direction.x > 0:
-                self.current_animation = 'walk_right'
+                self.current_animation = 'walk_right_down'
+                self.facing = 'right'
             elif self.direction.y < 0:
                 self.current_animation = 'walk_up'
+                self.facing = 'up'
             else:
                 self.current_animation = 'walk_down'
+                self.facing = 'down'
         else:
-            # Idle
+            # Idle - match the last direction
             if self.facing == 'left':
                 self.current_animation = 'idle_left'
             elif self.facing == 'right':
@@ -168,9 +189,8 @@ class Player(pygame.sprite.Sprite):
             else:
                 self.current_animation = 'idle_down'
         
-        # Reset animation if state changed
+        # Reset timer if animation changed
         if self.current_animation != self.previous_animation:
-            self.frame_index = 0
             self.animation_timer = 0
             self.previous_animation = self.current_animation
         
@@ -183,17 +203,12 @@ class Player(pygame.sprite.Sprite):
         # Update animation timer
         self.animation_timer += dt
         
-        # Check if it's time to advance to next frame
-        if self.animation_timer >= self.frame_duration:
-            self.animation_timer = 0
-            self.frame_index += 1
-            if self.frame_index >= len(animation_frames):
-                self.frame_index = 0
+        # Calculate frame index using total time (like your old model)
+        frame_duration = 1.0 / self.animation_speed
+        frame_index = int(self.animation_timer / frame_duration) % len(animation_frames)
         
-        # Always update the image to current frame
-        old_center = self.rect.center
-        self.image = animation_frames[self.frame_index]
-        self.rect = self.image.get_rect(center=old_center)
+        # Update image
+        self.image = animation_frames[frame_index]
     
     def move(self, dt):
         """Move the player"""
