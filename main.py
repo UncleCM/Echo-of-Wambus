@@ -6,6 +6,7 @@ from pytmx.util_pygame import load_pygame
 from prolog_interface import PrologEngine
 
 from random import randint
+import math
 
 class Game:
     def __init__(self):
@@ -34,6 +35,14 @@ class Game:
         
         # Update Prolog with player position
         self.prolog.update_player_position(self.player.rect.x, self.player.rect.y)
+        # Create player and add to sprite group
+        self.player = Player(spawn_pos, self.all_sprites, self.collision_sprites)
+
+        # Flashlight and darkness setup
+        self.flashlight_on = True
+        self.dark_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.dark_surface.fill((0, 0, 0))
+        self.dark_surface.set_alpha(6000)  # adjust transparency for darkness
         
         print(f"\n=== PROLOG GAME STATE ===")
         coll_count, fall_count = self.prolog.count_hazards()
@@ -121,6 +130,69 @@ class Game:
                 return True
         return False
 
+    def draw_flashlight(self):
+        """Draw a directional flashlight beam based on player facing direction."""
+        darkness = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        darkness.fill((0, 0, 0, 240))  # darkness alpha 240–255 for cave
+
+        beam_length = 450
+        beam_angle = 50  # cone width
+        light_color = (255, 255, 200)
+        player_screen_pos = self.player.rect.center - self.all_sprites.offset
+        px, py = player_screen_pos
+
+        # --- Create cone beam surface ---
+        beam_surface = pygame.Surface((beam_length * 2, beam_length * 2), pygame.SRCALPHA)
+        cx, cy = beam_length, beam_length
+
+        # Draw cone shape filled with light color
+        cone_points = [(cx, cy)]
+        for a in range(-beam_angle // 2, beam_angle // 2 + 1, 1):
+            rad = math.radians(a)
+            x = cx + math.cos(rad) * beam_length
+            y = cy + math.sin(rad) * beam_length
+            cone_points.append((x, y))
+        pygame.draw.polygon(beam_surface, (255, 255, 200, 220), cone_points)
+
+        # --- Add directional gradient inside the cone (fades outward) ---
+        gradient = pygame.Surface((beam_length * 2, beam_length * 2), pygame.SRCALPHA)
+        for i in range(beam_length):
+            alpha = int(255 * (1 - (i / beam_length)))
+            pygame.draw.line(gradient, (255, 255, 180, alpha // 3), (cx, cy), (cx + i, cy), 3)
+        beam_surface.blit(gradient, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # --- Rotate cone based on facing direction ---
+        facing = self.player.facing
+        rotation = 0
+        if "up" in facing:
+            rotation = 90
+        elif "down" in facing:
+            rotation = -90
+        elif "left" in facing:
+            rotation = 180
+        elif "right" in facing:
+            rotation = 0
+
+        rotated_beam = pygame.transform.rotate(beam_surface, rotation)
+        beam_rect = rotated_beam.get_rect(center=(px, py))
+
+        # --- Subtract light cone from darkness ---
+        darkness.blit(rotated_beam, beam_rect, special_flags=pygame.BLEND_RGBA_SUB)
+
+        # --- Add subtle player glow (small, dim circle) ---
+        glow_radius = 60
+        glow_surface = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
+        for r in range(glow_radius, 0, -4):
+            alpha = max(0, 180 - (r / glow_radius) * 180)
+            pygame.draw.circle(glow_surface, (255, 255, 200, int(alpha / 2)), (glow_radius, glow_radius), r)
+        darkness.blit(glow_surface, (px - glow_radius, py - glow_radius), special_flags=pygame.BLEND_RGBA_SUB)
+
+        # --- Draw final result ---
+        self.screen.blit(darkness, (0, 0))
+
+
+
+
     def run(self):
         while self.running:
             dt = self.clock.tick(60) / 1000.0
@@ -144,6 +216,9 @@ class Game:
             self.screen.fill((30, 30, 30))
             self.all_sprites.draw(self.screen, self.player)
             
+            self.draw_flashlight()
+
+            # Debug visualization (with camera offset)
             if self.debug_mode:
                 offset = self.all_sprites.offset
                 
