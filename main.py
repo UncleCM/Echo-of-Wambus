@@ -29,6 +29,12 @@ class Game:
         
         # Create player and add to sprite group
         self.player = Player(spawn_pos, self.all_sprites, self.collision_sprites)
+
+        # Flashlight and darkness setup
+        self.flashlight_on = True
+        self.dark_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.dark_surface.fill((0, 0, 0))
+        self.dark_surface.set_alpha(6000)  # adjust transparency for darkness
         
         print(f"\n=== COLLISION DEBUG ===")
         print(f"Total collision sprites: {len(self.collision_sprites)}")
@@ -137,6 +143,33 @@ class Game:
                     return True
         return False
 
+    def draw_flashlight(self):
+        """Draw circular flashlight light around the player"""
+        # Base darkness layer (slightly transparent black)
+        darkness = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        darkness.fill((0, 0, 0, 240))  # 240 = how dark (0–255)
+        
+        # Flashlight circle
+        light_radius = 250
+        light_surface = pygame.Surface((light_radius * 2, light_radius * 2), pygame.SRCALPHA)
+        
+        # Draw soft radial light (from bright center → transparent edge)
+        for r in range(light_radius, 0, -3):
+            alpha = int(255 * (r / light_radius))
+            color = (255, 255, 200, max(0, 255 - alpha))
+            pygame.draw.circle(light_surface, color, (light_radius, light_radius), r)
+        
+        # Player’s on-screen position (camera-centered)
+        player_screen_pos = self.player.rect.center - self.all_sprites.offset
+        light_pos = (player_screen_pos[0] - light_radius, player_screen_pos[1] - light_radius)
+        
+        # Apply the light using additive blend to reveal area
+        darkness.blit(light_surface, light_pos, special_flags=pygame.BLEND_RGBA_SUB)
+        
+        # Draw final darkness overlay
+        self.screen.blit(darkness, (0, 0))
+
+
     def run(self):
         while self.running:
             # Delta time in seconds
@@ -166,6 +199,8 @@ class Game:
             # Draw sprites with camera
             self.all_sprites.draw(self.screen, self.player)
             
+            self.draw_flashlight()
+
             # Debug visualization (with camera offset)
             if self.debug_mode:
                 offset = self.all_sprites.offset
