@@ -9,8 +9,8 @@ class Player(pygame.sprite.Sprite):
         self.frame_height = 64  # Height of each frame
         self.scale_factor = 2  # Scale up 2x for better visibility
         self.z = 1 # Draw on top of tiles (tiles are z=0)
-        
-        # Store prolog engine reference
+            
+            # Store prolog engine reference
         self.prolog = prolog_engine
         
         # Animation settings
@@ -39,7 +39,7 @@ class Player(pygame.sprite.Sprite):
         self.facing = 'down'
         self.collision_sprites = collision_sprites
     
-    # ... rest of the load_animations, load_sprite_strip, input, and animate methods stay the same ...
+        # ... rest of the load_animations, load_sprite_strip, input, and animate methods stay the same ...
     
     def load_animations(self):
         """Load all animation frames from sprite strip files"""
@@ -219,36 +219,50 @@ class Player(pygame.sprite.Sprite):
         self.image = animation_frames[frame_index]
     
     def move(self, dt):
-        """Move the player with optional Prolog validation"""
-        # Calculate new position
-        new_x = self.hitbox_rect.x + self.direction.x * self.speed * dt
-        new_y = self.hitbox_rect.y + self.direction.y * self.speed * dt
+        """
+        Move the player, using Prolog for validation and collision resolution.
+        The core collision logic is now in game_logic.pl.
+        """
+        if self.direction.length() == 0:
+            # Only update position in Prolog if it's not already correct (optional optimization)
+            if self.prolog:
+                 self.prolog.update_player_position(self.hitbox_rect.x, self.hitbox_rect.y)
+            return
+
+        # Calculate movement deltas
+        delta_x = self.direction.x * self.speed * dt
+        delta_y = self.direction.y * self.speed * dt
         
-        # Use Prolog for collision checking if available
+        # =========================================================================
+        # UPDATED LOGIC: USE PROLOG FOR MOVEMENT RESOLUTION
+        # =========================================================================
         if self.prolog:
-            # Horizontal movement with Prolog validation
-            self.hitbox_rect.x = new_x
-            if self.prolog.check_collision(
-                int(self.hitbox_rect.x), 
-                int(self.hitbox_rect.y), 
-                int(self.hitbox_rect.width), 
-                int(self.hitbox_rect.height)
-            ):
-                # Prolog detected collision, revert
-                self.hitbox_rect.x -= self.direction.x * self.speed * dt
+            # Get current hitbox position (must be integers for Prolog)
+            current_x = int(self.hitbox_rect.x)
+            current_y = int(self.hitbox_rect.y)
             
-            # Vertical movement with Prolog validation
-            self.hitbox_rect.y = new_y
-            if self.prolog.check_collision(
-                int(self.hitbox_rect.x), 
-                int(self.hitbox_rect.y), 
-                int(self.hitbox_rect.width), 
-                int(self.hitbox_rect.height)
-            ):
-                # Prolog detected collision, revert
-                self.hitbox_rect.y -= self.direction.y * self.speed * dt
+            # Ensure deltas and dimensions are integers for the Prolog call
+            int_delta_x = int(round(delta_x))
+            int_delta_y = int(round(delta_y))
+            player_w = self.hitbox_rect.width
+            player_h = self.hitbox_rect.height
+            
+            # Prolog resolves collision and updates its internal position fact
+            resolved_x, resolved_y = self.prolog.resolve_movement(
+                current_x, current_y, 
+                int_delta_x, int_delta_y, 
+                player_w, player_h
+            )
+            
+            # Update Python's hitbox with the resolved position
+            self.hitbox_rect.x = resolved_x
+            self.hitbox_rect.y = resolved_y
+
         else:
-            # Fallback to original collision system
+            # Fallback to original collision system (if no Prolog)
+            new_x = self.hitbox_rect.x + delta_x
+            new_y = self.hitbox_rect.y + delta_y
+            
             self.hitbox_rect.x = new_x
             self.collision('horizontal')
             self.hitbox_rect.y = new_y

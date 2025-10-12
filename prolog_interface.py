@@ -30,18 +30,41 @@ class PrologEngine:
     
     def check_fall(self, x, y, w, h, feet_height=10):
         """Check if player feet touch any fall zone"""
-        query = f"should_fall({x}, {y}, {w}, {h}, {feet_height})"
+        query = f"check_fall({x}, {y}, {w}, {h}, {feet_height})"
         results = list(self.prolog.query(query))
         return len(results) > 0
     
-    def can_move(self, new_x, new_y, w, h):
-        """Check if player can move to new position"""
-        query = f"can_move({new_x}, {new_y}, {w}, {h})"
+    # =========================================================================
+    # NEW LOGIC: MOVEMENT RESOLUTION INTERFACE
+    # =========================================================================
+    def resolve_movement(self, current_x, current_y, delta_x, delta_y, w, h):
+        """
+        Calculates the resolved position after movement and collision checking 
+        using the new Prolog rule.
+        Updates player_position fact in Prolog.
+        Returns the resolved (FinalX, FinalY) tuple.
+        """
+        # The 'resolve_movement' rule is responsible for updating player_position
+        query = f"resolve_movement({current_x}, {current_y}, {delta_x}, {delta_y}, {w}, {h}, FinalX, FinalY)"
         results = list(self.prolog.query(query))
-        return len(results) > 0
+        
+        if results:
+            # Prolog returns floating point numbers from calculations like 'is'
+            # Convert them back to integers for Pygame Rect
+            final_x = int(results[0]['FinalX'])
+            final_y = int(results[0]['FinalY'])
+            return final_x, final_y
+        
+        # Fallback to current position if query fails
+        return current_x, current_y
+
+    # =========================================================================
+    # EXISTING METHODS
+    # =========================================================================
     
     def update_player_position(self, x, y):
         """Update player position in Prolog"""
+        # This is now mainly called by resolve_movement, but kept for direct use
         query = f"update_player_position({x}, {y})"
         list(self.prolog.query(query))
     
@@ -70,8 +93,11 @@ class PrologEngine:
         query = f"is_safe_position({x}, {y}, {w}, {h}, {feet_height})"
         results = list(self.prolog.query(query))
         return len(results) > 0
-    
-    def clear_all(self):
-        """Clear all collision boxes and fall zones"""
-        list(self.prolog.query("clear_collision_boxes"))
-        list(self.prolog.query("clear_fall_zones"))
+
+    def find_safe_spawn(self, entrance_x, entrance_y, w, h, feet_height=10):
+        """Find a safe spawn position near the entrance"""
+        query = f"find_safe_spawn({entrance_x}, {entrance_y}, SafeX, SafeY, {w}, {h}, {feet_height})"
+        results = list(self.prolog.query(query))
+        if results:
+            return results[0]['SafeX'], results[0]['SafeY']
+        return entrance_x, entrance_y # Fallback
