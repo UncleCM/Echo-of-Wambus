@@ -1,7 +1,7 @@
 from Settings import *
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, pos, groups, collision_sprites):
+    def __init__(self, pos, groups, collision_sprites, prolog_engine=None):
         super().__init__(groups)
     
         # Frame settings - adjust these based on your sprite size
@@ -9,6 +9,10 @@ class Player(pygame.sprite.Sprite):
         self.frame_height = 64  # Height of each frame
         self.scale_factor = 2  # Scale up 2x for better visibility
         self.z = 1 # Draw on top of tiles (tiles are z=0)
+        
+        # Store prolog engine reference
+        self.prolog = prolog_engine
+        
         # Animation settings
         self.animation_timer = 0
         self.animation_speed = 12  # Frames per second
@@ -34,6 +38,9 @@ class Player(pygame.sprite.Sprite):
         self.speed = 200
         self.facing = 'down'
         self.collision_sprites = collision_sprites
+    
+    # ... rest of the load_animations, load_sprite_strip, input, and animate methods stay the same ...
+    
     def load_animations(self):
         """Load all animation frames from sprite strip files"""
         animations = {}
@@ -212,16 +219,42 @@ class Player(pygame.sprite.Sprite):
         self.image = animation_frames[frame_index]
     
     def move(self, dt):
-        """Move the player"""
-        self.hitbox_rect.x += self.direction.x * self.speed * dt
-        self.collision('horizontal')
-        self.hitbox_rect.y += self.direction.y * self.speed * dt
-        self.collision('vertical')
+        """Move the player with optional Prolog validation"""
+        # Calculate new position
+        new_x = self.hitbox_rect.x + self.direction.x * self.speed * dt
+        new_y = self.hitbox_rect.y + self.direction.y * self.speed * dt
+        
+        # Use Prolog for collision checking if available
+        if self.prolog:
+            # Horizontal movement with Prolog validation
+            self.hitbox_rect.x = new_x
+            if self.prolog.check_collision(
+                int(self.hitbox_rect.x), 
+                int(self.hitbox_rect.y), 
+                int(self.hitbox_rect.width), 
+                int(self.hitbox_rect.height)
+            ):
+                # Prolog detected collision, revert
+                self.hitbox_rect.x -= self.direction.x * self.speed * dt
+            
+            # Vertical movement with Prolog validation
+            self.hitbox_rect.y = new_y
+            if self.prolog.check_collision(
+                int(self.hitbox_rect.x), 
+                int(self.hitbox_rect.y), 
+                int(self.hitbox_rect.width), 
+                int(self.hitbox_rect.height)
+            ):
+                # Prolog detected collision, revert
+                self.hitbox_rect.y -= self.direction.y * self.speed * dt
+        else:
+            # Fallback to original collision system
+            self.hitbox_rect.x = new_x
+            self.collision('horizontal')
+            self.hitbox_rect.y = new_y
+            self.collision('vertical')
 
         self.rect.center = self.hitbox_rect.center
-
-
-
     
     def update(self, dt):
         """Update player every frame"""
@@ -230,7 +263,7 @@ class Player(pygame.sprite.Sprite):
         self.animate(dt)
 
     def collision(self, direction):
-        """Handle collision with collision sprites"""
+        """Handle collision with collision sprites (fallback method)"""
         for sprite in self.collision_sprites:
             if sprite.rect.colliderect(self.hitbox_rect):
                 if direction == 'horizontal':
