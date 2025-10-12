@@ -5,6 +5,7 @@ from groups import AllSprites
 from pytmx.util_pygame import load_pygame
 
 from random import randint
+import math
 
 class Game:
     def __init__(self):
@@ -144,30 +145,66 @@ class Game:
         return False
 
     def draw_flashlight(self):
-        """Draw circular flashlight light around the player"""
-        # Base darkness layer (slightly transparent black)
+        """Draw a directional flashlight beam based on player facing direction."""
         darkness = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        darkness.fill((0, 0, 0, 240))  # 240 = how dark (0–255)
-        
-        # Flashlight circle
-        light_radius = 250
-        light_surface = pygame.Surface((light_radius * 2, light_radius * 2), pygame.SRCALPHA)
-        
-        # Draw soft radial light (from bright center → transparent edge)
-        for r in range(light_radius, 0, -3):
-            alpha = int(255 * (r / light_radius))
-            color = (255, 255, 200, max(0, 255 - alpha))
-            pygame.draw.circle(light_surface, color, (light_radius, light_radius), r)
-        
-        # Player’s on-screen position (camera-centered)
+        darkness.fill((0, 0, 0, 240))  # darkness alpha 240–255 for cave
+
+        beam_length = 450
+        beam_angle = 50  # cone width
+        light_color = (255, 255, 200)
         player_screen_pos = self.player.rect.center - self.all_sprites.offset
-        light_pos = (player_screen_pos[0] - light_radius, player_screen_pos[1] - light_radius)
-        
-        # Apply the light using additive blend to reveal area
-        darkness.blit(light_surface, light_pos, special_flags=pygame.BLEND_RGBA_SUB)
-        
-        # Draw final darkness overlay
+        px, py = player_screen_pos
+
+        # --- Create cone beam surface ---
+        beam_surface = pygame.Surface((beam_length * 2, beam_length * 2), pygame.SRCALPHA)
+        cx, cy = beam_length, beam_length
+
+        # Draw cone shape filled with light color
+        cone_points = [(cx, cy)]
+        for a in range(-beam_angle // 2, beam_angle // 2 + 1, 1):
+            rad = math.radians(a)
+            x = cx + math.cos(rad) * beam_length
+            y = cy + math.sin(rad) * beam_length
+            cone_points.append((x, y))
+        pygame.draw.polygon(beam_surface, (255, 255, 200, 220), cone_points)
+
+        # --- Add directional gradient inside the cone (fades outward) ---
+        gradient = pygame.Surface((beam_length * 2, beam_length * 2), pygame.SRCALPHA)
+        for i in range(beam_length):
+            alpha = int(255 * (1 - (i / beam_length)))
+            pygame.draw.line(gradient, (255, 255, 180, alpha // 3), (cx, cy), (cx + i, cy), 3)
+        beam_surface.blit(gradient, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # --- Rotate cone based on facing direction ---
+        facing = self.player.facing
+        rotation = 0
+        if "up" in facing:
+            rotation = 90
+        elif "down" in facing:
+            rotation = -90
+        elif "left" in facing:
+            rotation = 180
+        elif "right" in facing:
+            rotation = 0
+
+        rotated_beam = pygame.transform.rotate(beam_surface, rotation)
+        beam_rect = rotated_beam.get_rect(center=(px, py))
+
+        # --- Subtract light cone from darkness ---
+        darkness.blit(rotated_beam, beam_rect, special_flags=pygame.BLEND_RGBA_SUB)
+
+        # --- Add subtle player glow (small, dim circle) ---
+        glow_radius = 60
+        glow_surface = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
+        for r in range(glow_radius, 0, -4):
+            alpha = max(0, 180 - (r / glow_radius) * 180)
+            pygame.draw.circle(glow_surface, (255, 255, 200, int(alpha / 2)), (glow_radius, glow_radius), r)
+        darkness.blit(glow_surface, (px - glow_radius, py - glow_radius), special_flags=pygame.BLEND_RGBA_SUB)
+
+        # --- Draw final result ---
         self.screen.blit(darkness, (0, 0))
+
+
 
 
     def run(self):
