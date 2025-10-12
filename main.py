@@ -55,7 +55,7 @@ class Game:
             # Find first entrance tile
             for x, y, surf in entrance_layer.tiles():
                 spawn_x = (x * self.tmx_map.tilewidth * self.map_scale) + (self.tmx_map.tilewidth * self.map_scale // 2)
-                spawn_y = (y * self.tmx_map.tileheight * self.map_scale) + (self.tmx_map.tileheight * self.map_scale // 2)
+                spawn_y = (y * self.tmx_map.tileheight * self.map_scale) + (self.tmx_map.tileheight * self.map_scale // 2 + 100)
                 print(f"Found entrance at tile ({x}, {y}) -> world position ({spawn_x}, {spawn_y})")
                 return (spawn_x, spawn_y)
         
@@ -121,8 +121,17 @@ class Game:
             return False
         
         if not self.game_over:
+            # Create a small rect at the player's feet
+            feet_height = 10  # Height of the feet collision area
+            feet_rect = pygame.Rect(
+                self.player.hitbox_rect.left,
+                self.player.hitbox_rect.bottom - feet_height,
+                self.player.hitbox_rect.width,
+                feet_height
+            )
+
             for fall_zone in self.fall_sprites:
-                if self.player.hitbox_rect.colliderect(fall_zone.rect):
+                if fall_zone.rect.colliderect(feet_rect):
                     self.game_over = True
                     print("GAME OVER - Fell into a hole!")
                     return True
@@ -177,6 +186,18 @@ class Game:
                 offset_hitbox = self.player.hitbox_rect.copy()
                 offset_hitbox.topleft -= offset
                 pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
+                
+                # Draw player feet hitbox in CYAN
+                feet_height = 10
+                feet_rect = pygame.Rect(
+                    self.player.hitbox_rect.left,
+                    self.player.hitbox_rect.bottom - feet_height,
+                    self.player.hitbox_rect.width,
+                    feet_height
+                )
+                offset_feet = feet_rect.copy()
+                offset_feet.topleft -= offset
+                pygame.draw.rect(self.screen, (0, 255, 255), offset_feet, 3)
                 
                 # Draw player rect in BLUE
                 offset_player = self.player.rect.copy()

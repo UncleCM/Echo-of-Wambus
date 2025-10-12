@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="80" height="70" tilewidth="16" tileheight="16" infinite="0" nextlayerid="16" nextobjectid="183">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="80" height="70" tilewidth="16" tileheight="16" infinite="0" nextlayerid="16" nextobjectid="186">
  <tileset firstgid="1" source="Tile/cave.tsx"/>
  <tileset firstgid="1001" source="Tile/MainLev2.0.tsx"/>
  <tileset firstgid="10793" source="Tile/decorative.tsx"/>
@@ -670,7 +670,7 @@
 </data>
  </layer>
  <objectgroup id="15" name="Exit">
-  <object id="182" x="799.333" y="65.3333" width="16.6667" height="15"/>
+  <object id="182" x="799.333" y="80.5833" width="16.6667" height="15"/>
  </objectgroup>
  <objectgroup id="13" name="Collision">
   <object id="3" x="1" y="-1" width="94" height="49.3333"/>
@@ -697,14 +697,14 @@
   <object id="31" x="1185.33" y="192.333" width="45.3333" height="66.3334"/>
   <object id="32" x="1137" y="177" width="48.3333" height="64.3334"/>
   <object id="34" x="1185.67" y="175.667" width="13.6667" height="17"/>
-  <object id="35" x="1039.67" y="160" width="128" height="66"/>
+  <object id="35" x="1054.67" y="160" width="113" height="66"/>
   <object id="36" x="1025.33" y="657.333" width="140.667" height="128"/>
   <object id="38" x="1025.33" y="464" width="126" height="195.333"/>
   <object id="39" x="1024.67" y="320" width="110.667" height="144.667"/>
   <object id="40" x="992.667" y="288" width="126.667" height="79.3333"/>
   <object id="43" x="848" y="255.333" width="144.667" height="98.333"/>
   <object id="44" x="992.667" y="256" width="32" height="144.333"/>
-  <object id="45" x="1024.67" y="254.667" width="14.6667" height="32"/>
+  <object id="45" x="1024.67" y="256.042" width="14.6667" height="30.625"/>
   <object id="46" x="1039.33" y="271.333" width="48" height="18"/>
   <object id="48" x="800" y="272.667" width="47.3333" height="96.9997"/>
   <object id="49" x="751.333" y="287.333" width="48" height="82"/>
@@ -773,13 +773,15 @@
   <object id="177" x="1168.18" y="788.909" width="31.2727" height="24.9091"/>
   <object id="178" x="944.375" y="642.375" width="30.125" height="28"/>
   <object id="179" x="768.313" y="454.938" width="29.125" height="23.3125"/>
+  <object id="183" x="1039.75" y="159.75" width="14.5" height="56.75"/>
+  <object id="185" x="799.5" y="-0.25" width="17.5" height="80.25"/>
  </objectgroup>
  <objectgroup id="14" name="Fall">
   <object id="97" x="152" y="150.5" width="34.75" height="35.25"/>
   <object id="98" x="129.75" y="227.25" width="12.25" height="12"/>
-  <object id="99" x="55.5" y="566.5" width="128.5" height="63.25"/>
+  <object id="99" x="55.5" y="566.5" width="128.5" height="72.25"/>
   <object id="102" x="176.703" y="597.5" width="24.9241" height="30.75"/>
-  <object id="103" x="170.472" y="614.755" width="45.0552" height="13.0259"/>
+  <object id="103" x="170.472" y="614.755" width="45.0552" height="23.9009"/>
   <object id="104" x="53.5" y="679" width="180.5" height="46"/>
   <object id="105" x="228" y="695.5" width="21" height="29.5"/>
   <object id="106" x="61.5" y="722.5" width="182.5" height="7"/>
