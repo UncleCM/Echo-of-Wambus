@@ -65,6 +65,7 @@ class Game:
         print(f"No entrance found, spawning at map center: ({map_center_x}, {map_center_y})")
         return (map_center_x, map_center_y)
 
+
     def setup(self):
         self.tmx_map = load_pygame(join('assets', 'Map', 'test_wall_size.tmx'))
         self.map_scale = 2
@@ -72,7 +73,7 @@ class Game:
         print(f"Map size: {self.tmx_map.width} x {self.tmx_map.height}")
         print(f"Tile size: {self.tmx_map.tilewidth} x {self.tmx_map.tileheight}")
         
-        # Load tile layers
+        # 1. LOAD TILE LAYERS (e.g., Floor, Wall)
         for layer in self.tmx_map.visible_layers:
             if hasattr(layer, 'data'):
                 for x, y, surf in layer.tiles():
@@ -80,23 +81,36 @@ class Game:
                     # Pass layer name so we know which tiles need Y-sorting
                     Tile(pos, surf, self.all_sprites, self.map_scale, layer.name)
                     
-                    # ONLY create collision for Wall layer tiles
-                    if layer.name == 'Wall':
-                        collision_pos = (x * self.tmx_map.tilewidth * self.map_scale, 
-                                    y * self.tmx_map.tileheight * self.map_scale)
-                        collision_size = (self.tmx_map.tilewidth * self.map_scale, 
-                                        self.tmx_map.tileheight * self.map_scale)
-                        CollisionSprite(collision_pos, collision_size, self.collision_sprites)
+                    # OPTIONAL: If you still want Wall tiles to be collision sprites
+                    # if layer.name == 'Wall':
+                    #     collision_pos = (x * self.tmx_map.tilewidth * self.map_scale, 
+                    #                 y * self.tmx_map.tileheight * self.map_scale)
+                    #     collision_size = (self.tmx_map.tilewidth * self.map_scale, 
+                    #                     self.tmx_map.tileheight * self.map_scale)
+                    #     CollisionSprite(collision_pos, collision_size, self.collision_sprites)
         
-        # Load Fall zones from object layer
+        # 2. LOAD OBJECT LAYERS (e.g., Collision, Fall zones)
         for layer in self.tmx_map.layers:
             if type(layer).__name__ == 'TiledObjectGroup':
+                
+                # Load Collision boxes from object layer
+                if 'collision' in layer.name.lower():
+                    for obj in layer:
+                        # Scale object position and size
+                        pos = (obj.x * self.map_scale, obj.y * self.map_scale)
+                        size = (obj.width * self.map_scale, obj.height * self.map_scale)
+                        
+                        # Create the invisible collision sprite
+                        CollisionSprite(pos, size, self.collision_sprites)
+                
+                # Load Fall zones from object layer
                 if 'fall' in layer.name.lower():
                     for obj in layer:
                         pos = (obj.x * self.map_scale, obj.y * self.map_scale)
                         size = (obj.width * self.map_scale, obj.height * self.map_scale)
                         FallZone(pos, size, self.fall_sprites)
         
+        # 3. FINAL DEBUG PRINTS
         print(f"Collision sprites: {len(self.collision_sprites)}")
         print(f"Fall zones: {len(self.fall_sprites)}")
 

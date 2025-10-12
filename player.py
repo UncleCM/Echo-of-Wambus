@@ -31,7 +31,7 @@ class Player(pygame.sprite.Sprite):
         
         # Movement
         self.direction = pygame.math.Vector2()
-        self.speed = 100
+        self.speed = 200
         self.facing = 'down'
         self.collision_sprites = collision_sprites
     def load_animations(self):

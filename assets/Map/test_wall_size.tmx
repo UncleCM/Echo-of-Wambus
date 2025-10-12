@@ -774,12 +774,12 @@
   <object id="178" x="944.375" y="642.375" width="30.125" height="28"/>
   <object id="179" x="768.313" y="454.938" width="29.125" height="23.3125"/>
  </objectgroup>
- <objectgroup id="14" name="Fall" visible="0">
+ <objectgroup id="14" name="Fall">
   <object id="97" x="152" y="150.5" width="34.75" height="35.25"/>
   <object id="98" x="129.75" y="227.25" width="12.25" height="12"/>
-  <object id="99" x="55.5" y="566.5" width="128.5" height="73.5"/>
-  <object id="102" x="176" y="597.5" width="26" height="43"/>
-  <object id="103" x="169.5" y="615.5" width="47" height="23.5"/>
+  <object id="99" x="55.5" y="566.5" width="128.5" height="63.25"/>
+  <object id="102" x="176.703" y="597.5" width="24.9241" height="30.75"/>
+  <object id="103" x="170.472" y="614.755" width="45.0552" height="13.0259"/>
   <object id="104" x="53.5" y="679" width="180.5" height="46"/>
   <object id="105" x="228" y="695.5" width="21" height="29.5"/>
   <object id="106" x="61.5" y="722.5" width="182.5" height="7"/>

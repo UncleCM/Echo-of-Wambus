@@ -30,7 +30,7 @@ class AllSprites(pygame.sprite.Group):
             if sprite_class == 'Tile':
                 # Check if it's a wall/pillar tile (needs Y-sorting) or floor tile
                 if hasattr(sprite, 'layer_name'):
-                    if sprite.layer_name in ['Wall', 'Pillar', 'Rock', 'Shadow']:
+                    if sprite.layer_name in ['Floor', 'Water', 'Wall', 'Hole', 'Rock', 'Shadow', 'Pillar', 'Pillar', 'Brigde', 'Entrance']:
                         wall_tiles.append(sprite)
                     else:
                         floor_tiles.append(sprite)
