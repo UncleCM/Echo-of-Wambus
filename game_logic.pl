@@ -136,4 +136,113 @@ resolve_movement(CurrentX, CurrentY, DeltaX, DeltaY, PlayerW, PlayerH, FinalX, F
     FinalX = ResolvedX,
     FinalY = ResolvedY,
     % Update the game state with the new resolved position
-    update_player_position(FinalX, FinalY). 
+    update_player_position(FinalX, FinalY).
+
+% ============================================================================
+% WUMPUS AI LOGIC
+% ============================================================================
+
+% Dynamic facts for Wumpus state
+:- dynamic wumpus_position/2.
+:- dynamic wumpus_state/1.
+
+% Initialize Wumpus state
+init_wumpus(X, Y) :-
+    retractall(wumpus_position(_, _)),
+    retractall(wumpus_state(_)),
+    assertz(wumpus_position(X, Y)),
+    assertz(wumpus_state(patrol)).
+
+% Update Wumpus position
+update_wumpus_position(X, Y) :-
+    retractall(wumpus_position(_, _)),
+    assertz(wumpus_position(X, Y)).
+
+% Update Wumpus state
+update_wumpus_state(NewState) :-
+    retractall(wumpus_state(_)),
+    assertz(wumpus_state(NewState)).
+
+% Calculate distance between two points (squared to avoid sqrt)
+distance_squared(X1, Y1, X2, Y2, DistSq) :-
+    DX is X2 - X1,
+    DY is Y2 - Y1,
+    DistSq is DX * DX + DY * DY.
+
+% AI Parameters
+detection_range_squared(90000).  % 300 * 300 = 90000
+attack_range_squared(2500).      % 50 * 50 = 2500
+
+% Check if player is in detection range
+in_detection_range(WumpusX, WumpusY, PlayerX, PlayerY) :-
+    distance_squared(WumpusX, WumpusY, PlayerX, PlayerY, DistSq),
+    detection_range_squared(MaxDistSq),
+    DistSq =< MaxDistSq.
+
+% Check if player is in attack range
+in_attack_range(WumpusX, WumpusY, PlayerX, PlayerY) :-
+    distance_squared(WumpusX, WumpusY, PlayerX, PlayerY, DistSq),
+    attack_range_squared(MaxDistSq),
+    DistSq =< MaxDistSq.
+
+% Wumpus AI Decision Making
+% wumpus_decision(WumpusX, WumpusY, PlayerX, PlayerY, CurrentState, NewState, DirectionX, DirectionY)
+
+% PATROL STATE: Check if should transition to chase
+wumpus_decision(WX, WY, PX, PY, patrol, chase, DX, DY) :-
+    in_detection_range(WX, WY, PX, PY),
+    !,  % Cut to prevent backtracking
+    calculate_direction(WX, WY, PX, PY, DX, DY).
+
+% PATROL STATE: Stay in patrol (return no direction change)
+wumpus_decision(_WX, _WY, _PX, _PY, patrol, patrol, 0, 0).
+
+% CHASE STATE: Check if should transition to attack
+wumpus_decision(WX, WY, PX, PY, chase, attack, 0, 0) :-
+    in_attack_range(WX, WY, PX, PY),
+    !.
+
+% CHASE STATE: Check if player left detection range (return to patrol)
+wumpus_decision(WX, WY, PX, PY, chase, patrol, 0, 0) :-
+    \+ in_detection_range(WX, WY, PX, PY),
+    !.
+
+% CHASE STATE: Continue chasing
+wumpus_decision(WX, WY, PX, PY, chase, chase, DX, DY) :-
+    in_detection_range(WX, WY, PX, PY),
+    calculate_direction(WX, WY, PX, PY, DX, DY).
+
+% ATTACK STATE: Check if player moved out of attack range
+wumpus_decision(WX, WY, PX, PY, attack, chase, DX, DY) :-
+    \+ in_attack_range(WX, WY, PX, PY),
+    in_detection_range(WX, WY, PX, PY),
+    !,
+    calculate_direction(WX, WY, PX, PY, DX, DY).
+
+% ATTACK STATE: Player left detection range entirely
+wumpus_decision(WX, WY, PX, PY, attack, patrol, 0, 0) :-
+    \+ in_detection_range(WX, WY, PX, PY),
+    !.
+
+% ATTACK STATE: Stay attacking
+wumpus_decision(_WX, _WY, _PX, _PY, attack, attack, 0, 0).
+
+% DEAD STATE: Always stay dead
+wumpus_decision(_WX, _WY, _PX, _PY, dead, dead, 0, 0).
+
+% Calculate normalized direction vector from Wumpus to Player
+% Returns direction as floats between -1.0 and 1.0
+calculate_direction(WX, WY, PX, PY, DX, DY) :-
+    DiffX is PX - WX,
+    DiffY is PY - WY,
+    % Calculate magnitude
+    MagSquared is DiffX * DiffX + DiffY * DiffY,
+    (MagSquared > 0 ->
+        Mag is sqrt(MagSquared),
+        DX is DiffX / Mag,
+        DY is DiffY / Mag
+    ;
+        % Same position - no direction
+        DX = 0,
+        DY = 0
+    ). 

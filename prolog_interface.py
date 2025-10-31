@@ -134,3 +134,43 @@ class PrologEngine:
             except (KeyError, IndexError):
                 return entrance_x, entrance_y
         return entrance_x, entrance_y
+    
+    # =========================================================================
+    # WUMPUS AI INTERFACE
+    # =========================================================================
+    
+    def init_wumpus(self, x, y):
+        """Initialize Wumpus state in Prolog"""
+        query = f"init_wumpus({x}, {y})"
+        self._query(query)
+    
+    def update_wumpus_position(self, x, y):
+        """Update Wumpus position in Prolog"""
+        query = f"update_wumpus_position({x}, {y})"
+        self._query(query)
+    
+    def update_wumpus_state(self, state):
+        """Update Wumpus AI state in Prolog"""
+        query = f"update_wumpus_state({state})"
+        self._query(query)
+    
+    def get_wumpus_decision(self, wumpus_x, wumpus_y, player_x, player_y, current_state):
+        """
+        Query Prolog for Wumpus AI decision
+        Returns: (new_state, direction_x, direction_y)
+        """
+        query = f"wumpus_decision({wumpus_x}, {wumpus_y}, {player_x}, {player_y}, {current_state}, NewState, DirectionX, DirectionY)"
+        results = self._query(query)
+        
+        if results:
+            try:
+                new_state = results[0]['NewState']
+                direction_x = float(results[0]['DirectionX'])
+                direction_y = float(results[0]['DirectionY'])
+                return (new_state, direction_x, direction_y)
+            except (KeyError, IndexError, ValueError) as e:
+                print(f"[PrologEngine] Error parsing wumpus_decision: {e}")
+                return (current_state, 0.0, 0.0)
+        
+        # Fallback if query fails
+        return (current_state, 0.0, 0.0)

@@ -36,6 +36,10 @@ class Wumpus(Entity):
         initial_image = self.animations[self.current_animation][0]
         self.setup_sprite(initial_image, hitbox_inflate=(-40, -30))
         
+        # Initialize Wumpus in Prolog
+        if self.prolog and getattr(self.prolog, 'available', False):
+            self.prolog.init_wumpus(int(pos[0]), int(pos[1]))
+        
         print(f"[Wumpus] Initialized at {pos}, HP: {self.health}/{self.max_health}")
         
     def load_animations(self):
@@ -135,29 +139,63 @@ class Wumpus(Entity):
     def ai_update(self, player_pos, dt):
         """
         Update AI behavior based on player position and current state
-        Uses Prolog for decision-making
+        Uses Prolog for decision-making (with Python fallback)
         """
         if not self.is_alive:
             return
         
-        # Calculate distance to player
+        # Get current positions
         wumpus_pos = pygame.math.Vector2(self.hitbox_rect.center)
-        distance_to_player = wumpus_pos.distance_to(player_pos)
         
-        # Query Prolog for AI decision if available
+        # =========================================================================
+        # PROLOG AUTHORITATIVE AI DECISION-MAKING
+        # =========================================================================
         if self.prolog and getattr(self.prolog, 'available', False):
             try:
-                # In future: self.prolog.get_wumpus_decision(wumpus_pos, player_pos, self.ai_state)
-                # For now, use simple Python logic
-                pass
+                # Update Prolog with current position
+                self.prolog.update_wumpus_position(int(wumpus_pos.x), int(wumpus_pos.y))
+                
+                # Query Prolog for AI decision
+                new_state, direction_x, direction_y = self.prolog.get_wumpus_decision(
+                    int(wumpus_pos.x), int(wumpus_pos.y),
+                    int(player_pos.x), int(player_pos.y),
+                    self.ai_state
+                )
+                
+                # Update state
+                self.ai_state = new_state
+                
+                # Handle state-specific behavior
+                if self.ai_state == 'patrol':
+                    # Prolog doesn't know patrol points, use Python for patrol navigation
+                    self.patrol()
+                    
+                elif self.ai_state == 'chase':
+                    # Use Prolog's calculated direction
+                    self.direction.x = direction_x
+                    self.direction.y = direction_y
+                    
+                elif self.ai_state == 'attack':
+                    # Stop and attack
+                    self.direction = pygame.math.Vector2(0, 0)
+                    # TODO: Trigger attack animation/damage
+                    
+                elif self.ai_state == 'dead':
+                    self.direction = pygame.math.Vector2(0, 0)
+                
+                return  # Successfully used Prolog AI
+                
             except Exception as e:
-                print(f"[Wumpus] Prolog AI query failed: {e}")
+                print(f"[Wumpus] Prolog AI query failed: {e}, falling back to Python")
         
-        # Simple AI logic (will be moved to Prolog in next step)
+        # =========================================================================
+        # FALLBACK: PYTHON AI (if Prolog unavailable)
+        # =========================================================================
+        distance_to_player = wumpus_pos.distance_to(player_pos)
+        
         if distance_to_player <= self.attack_range:
             self.ai_state = 'attack'
             self.direction = pygame.math.Vector2(0, 0)  # Stop moving
-            # TODO: Trigger attack
             
         elif distance_to_player <= self.detection_range:
             # Chase player
@@ -169,18 +207,23 @@ class Wumpus(Entity):
         else:
             # Patrol
             self.ai_state = 'patrol'
-            if self.patrol_points and len(self.patrol_points) > 0:
-                target = self.patrol_points[self.current_patrol_index]
-                direction_to_target = pygame.math.Vector2(target) - wumpus_pos
-                
-                if direction_to_target.length() < 10:  # Reached patrol point
-                    self.current_patrol_index = (self.current_patrol_index + 1) % len(self.patrol_points)
-                else:
-                    if direction_to_target.length() > 0:
-                        self.direction = direction_to_target.normalize()
+            self.patrol()
+    
+    def patrol(self):
+        """Navigate to patrol points"""
+        if self.patrol_points and len(self.patrol_points) > 0:
+            wumpus_pos = pygame.math.Vector2(self.hitbox_rect.center)
+            target = self.patrol_points[self.current_patrol_index]
+            direction_to_target = pygame.math.Vector2(target) - wumpus_pos
+            
+            if direction_to_target.length() < 10:  # Reached patrol point
+                self.current_patrol_index = (self.current_patrol_index + 1) % len(self.patrol_points)
             else:
-                # No patrol points - stand still
-                self.direction = pygame.math.Vector2(0, 0)
+                if direction_to_target.length() > 0:
+                    self.direction = direction_to_target.normalize()
+        else:
+            # No patrol points - stand still
+            self.direction = pygame.math.Vector2(0, 0)
     
     def animate(self, dt):
         """Override animate to handle Wumpus-specific animation states"""
