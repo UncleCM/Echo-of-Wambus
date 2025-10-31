@@ -46,6 +46,8 @@ class Game:
         self.wumpus_sprites = pygame.sprite.Group()
         self.treasure_sprites = pygame.sprite.Group()
         self.exit_sprites = pygame.sprite.Group()
+        self.arrow_sprites = pygame.sprite.Group()  # Flying arrows
+        self.arrow_pickup_sprites = pygame.sprite.Group()  # Arrow pickups to collect
 
         self.setup()
         
@@ -67,9 +69,10 @@ class Game:
         # Update Prolog with player position (use hitbox for accuracy)
         self.prolog.update_player_position(int(self.player.hitbox_rect.x), int(self.player.hitbox_rect.y))
         
-        # Spawn treasure and exit
+        # Spawn treasure, exit, and arrow pickups
         self.spawn_treasure()
         self.spawn_exit()
+        self.spawn_arrow_pickups()
 
         # Flashlight and darkness setup
         self.flashlight_on = True
@@ -153,6 +156,42 @@ class Game:
         entrance_pos = self.find_spawn_position()
         exit_portal = ExitPortal(entrance_pos, [self.all_sprites, self.exit_sprites])
         print(f"Spawned exit portal at entrance: {entrance_pos}")
+    
+    def spawn_arrow_pickups(self):
+        """Spawn arrow pickups in map (3 locations, no respawn)"""
+        from sprites import ArrowPickup
+        
+        pickup_count = 0
+        
+        # Look for 'ArrowPickup' object layer in TMX
+        for layer in self.tmx_map.layers:
+            if type(layer).__name__ == 'TiledObjectGroup' and 'arrow' in layer.name.lower():
+                for obj in layer:
+                    if pickup_count >= ARROW_PICKUP_COUNT:
+                        break
+                    pickup_x = (obj.x * self.map_scale) + (obj.width * self.map_scale // 2)
+                    pickup_y = (obj.y * self.map_scale) + (obj.height * self.map_scale // 2)
+                    pickup = ArrowPickup((pickup_x, pickup_y), [self.all_sprites, self.arrow_pickup_sprites])
+                    pickup_count += 1
+                    print(f"Spawned arrow pickup {pickup_count} at ({pickup_x}, {pickup_y})")
+                
+                if pickup_count >= ARROW_PICKUP_COUNT:
+                    return
+        
+        # Fallback: spawn 3 arrow pickups at predefined locations
+        map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
+        map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
+        
+        fallback_positions = [
+            (map_width // 4, map_height // 3),      # Upper left area
+            (map_width // 2, map_height * 2 // 3),  # Center-bottom
+            (map_width * 3 // 4, map_height // 2),  # Right-middle
+        ]
+        
+        for i, pos in enumerate(fallback_positions[:ARROW_PICKUP_COUNT - pickup_count]):
+            pickup = ArrowPickup(pos, [self.all_sprites, self.arrow_pickup_sprites])
+            pickup_count += 1
+            print(f"No arrow spawn found, using fallback {pickup_count}: {pos}")
 
     def setup(self):
         self.tmx_map = load_pygame(join('assets', 'Map', 'test_wall_size.tmx'))
@@ -248,19 +287,58 @@ class Game:
                 self.game_end_time = pygame.time.get_ticks()
                 print("VICTORY - Escaped with the treasure!")
     
-    def check_player_attack(self):
-        """Check if player's attack hits the Wumpus (now stuns instead of killing)"""
-        # Calculate distance between player and Wumpus
-        player_pos = pygame.math.Vector2(self.player.hitbox_rect.center)
-        wumpus_pos = pygame.math.Vector2(self.wumpus.hitbox_rect.center)
-        distance = player_pos.distance_to(wumpus_pos)
+    def handle_arrow_shooting(self):
+        """Handle player shooting arrow (Space key pressed)"""
+        if not self.player.is_alive:
+            return
         
-        # Check if Wumpus is in attack range
-        if distance <= self.player.attack_range:
-            damage = self.wumpus.take_damage(self.player.attack_damage)
-            print(f"[Combat] Player hit Wumpus for {damage} damage! Wumpus HP: {self.wumpus.health}/{self.wumpus.max_health}")
+        # Try to shoot arrow
+        arrow_direction = self.player.shoot_arrow()
+        
+        if arrow_direction is not None:
+            # Create arrow sprite
+            from sprites import Arrow
+            arrow_pos = self.player.hitbox_rect.center
+            arrow = Arrow(arrow_pos, arrow_direction, [self.all_sprites, self.arrow_sprites], self.collision_sprites)
+            print(f"[Arrow] Shot arrow from {arrow_pos} in direction {arrow_direction}")
+    
+    def check_arrow_hits(self):
+        """Check if any arrows hit the Wumpus"""
+        for arrow in self.arrow_sprites:
+            if not self.wumpus.is_alive:
+                continue
+                
+            # Method 1: Direct hitbox collision
+            hit_by_collision = arrow.hitbox_rect.colliderect(self.wumpus.hitbox_rect)
             
-            # TODO: Implement stun mechanic instead of death
+            # Method 2: Distance-based detection (more forgiving)
+            arrow_center = pygame.math.Vector2(arrow.rect.center)
+            wumpus_center = pygame.math.Vector2(self.wumpus.hitbox_rect.center)
+            distance = arrow_center.distance_to(wumpus_center)
+            hit_by_distance = distance < 60  # Hit if within 60 pixels
+            
+            # Hit if either method detects collision
+            if hit_by_collision or hit_by_distance:
+                # Apply stun to Wumpus
+                self.wumpus.apply_stun()
+                
+                # Remove arrow
+                arrow.kill()
+                print(f"[Combat] Arrow hit Wumpus! Distance: {distance:.1f}px, Wumpus stunned for 3 seconds!")
+    
+    def check_arrow_pickups(self):
+        """Check if player collects arrow pickups"""
+        for pickup in self.arrow_pickup_sprites:
+            if self.player.hitbox_rect.colliderect(pickup.hitbox_rect):
+                # Try to add arrow to player
+                if self.player.add_arrows(1):
+                    # Remove pickup permanently (no respawn)
+                    pickup.kill()
+                    print(f"[Pickup] Collected arrow pickup! Total arrows: {self.player.arrows}/{self.player.max_arrows}")
+    
+    def check_player_attack(self):
+        """DEPRECATED - Player now uses arrow combat system instead of melee"""
+        pass
     
     def check_wumpus_attack(self):
         """Check if Wumpus's attack hits the Player"""
@@ -361,6 +439,10 @@ class Game:
                     if event.key == pygame.K_f:
                         self.debug_mode = not self.debug_mode
                         print(f"Debug mode: {self.debug_mode}")
+                    
+                    # Arrow shooting (Space key)
+                    if event.key == pygame.K_SPACE and self.game_state == GameState.PLAYING:
+                        self.handle_arrow_shooting()
             
             if self.game_state == GameState.PLAYING:
                 # Update time remaining
@@ -381,15 +463,16 @@ class Game:
                         player_center = pygame.math.Vector2(self.player.hitbox_rect.center)
                         self.wumpus.ai_update(player_center, dt)
                     
-                    # Update all sprites (Player and Wumpus movement/animation)
+                    # Update all sprites (Player, Wumpus, Arrows movement/animation)
                     self.all_sprites.update(dt)
+                    self.arrow_sprites.update(dt)  # Update flying arrows
                     
-                    # Check player attack hit Wumpus
-                    if self.player.is_attacking and self.wumpus.is_alive:
-                        self.check_player_attack()
+                    # Check arrow collisions
+                    self.check_arrow_hits()
+                    self.check_arrow_pickups()
                     
-                    # Check Wumpus attack hit Player
-                    if self.wumpus.ai_state == 'attack' and self.player.is_alive:
+                    # Check Wumpus attack hit Player (only if not stunned)
+                    if self.wumpus.ai_state == 'attack' and self.player.is_alive and not self.wumpus.is_stunned:
                         self.check_wumpus_attack()
                     
                     # Check treasure and exit
@@ -422,12 +505,6 @@ class Game:
                 offset_hitbox = self.player.hitbox_rect.copy()
                 offset_hitbox.topleft -= offset
                 pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
-                
-                # Draw Player attack range
-                if self.player.is_attacking:
-                    player_center = self.player.hitbox_rect.center
-                    screen_center = (int(player_center[0] - offset.x), int(player_center[1] - offset.y))
-                    pygame.draw.circle(self.screen, (255, 255, 0), screen_center, self.player.attack_range, 2)
                 
                 # Draw Wumpus hitbox and detection range
                 if self.wumpus.is_alive:
@@ -488,7 +565,7 @@ class Game:
                 offset_player.topleft -= offset
                 pygame.draw.rect(self.screen, (0, 0, 255), offset_player, 2)
             
-            # Draw HUD (Timer and treasure status)
+            # Draw HUD (Timer, arrows, treasure, and exit status)
             if self.game_state == GameState.PLAYING:
                 font = pygame.font.Font(None, 36)
                 
@@ -500,18 +577,23 @@ class Game:
                 timer_rect = timer_text.get_rect(center=(WINDOW_WIDTH // 2, 30))
                 self.screen.blit(timer_text, timer_rect)
                 
-                # Treasure status (top left)
+                # Arrow count (top left)
+                arrow_color = (200, 200, 200) if self.player.arrows > 0 else (255, 100, 100)
+                arrow_text = font.render(f"🏹 x{self.player.arrows}/{self.player.max_arrows}", True, arrow_color)
+                self.screen.blit(arrow_text, (20, 20))
+                
+                # Treasure status (top left, below arrows)
                 treasure_status = "✓ Treasure" if self.has_treasure else "⬜ Treasure"
                 treasure_color = (255, 215, 0) if self.has_treasure else (150, 150, 150)
                 treasure_text = font.render(treasure_status, True, treasure_color)
-                self.screen.blit(treasure_text, (20, 20))
+                self.screen.blit(treasure_text, (20, 60))
                 
                 # Exit status (top left, below treasure)
                 if self.has_treasure:
                     exit_status = "🔓 Exit Unlocked!" if self.exit_unlocked else "🔒 Exit"
                     exit_color = (0, 255, 0) if self.exit_unlocked else (150, 150, 150)
                     exit_text = font.render(exit_status, True, exit_color)
-                    self.screen.blit(exit_text, (20, 60))
+                    self.screen.blit(exit_text, (20, 100))
             
             # Draw game state screens
             if self.game_state == GameState.VICTORY:

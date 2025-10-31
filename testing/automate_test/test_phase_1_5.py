@@ -479,6 +479,308 @@ def test_screen_methods_exist():
         pygame.quit()
         return False
 
+def test_arrow_combat_initialization():
+    """Test that arrow combat system initializes correctly"""
+    print("\n=== Testing Arrow Combat Initialization ===")
+    from main import Game
+    from Settings import STARTING_ARROWS, MAX_ARROWS, ARROW_PICKUP_COUNT
+    import pygame
+    
+    pygame.init()
+    try:
+        game = Game()
+        
+        # Check player has starting arrows
+        if not hasattr(game.player, 'arrows'):
+            print("❌ FAIL: Player missing 'arrows' attribute")
+            pygame.quit()
+            return False
+        
+        if game.player.arrows != STARTING_ARROWS:
+            print(f"❌ FAIL: Player should start with {STARTING_ARROWS} arrow(s), got {game.player.arrows}")
+            pygame.quit()
+            return False
+        
+        # Check max arrows
+        if not hasattr(game.player, 'max_arrows'):
+            print("❌ FAIL: Player missing 'max_arrows' attribute")
+            pygame.quit()
+            return False
+        
+        if game.player.max_arrows != MAX_ARROWS:
+            print(f"❌ FAIL: Player max_arrows should be {MAX_ARROWS}, got {game.player.max_arrows}")
+            pygame.quit()
+            return False
+        
+        # Check arrow sprites group exists
+        if not hasattr(game, 'arrow_sprites'):
+            print("❌ FAIL: arrow_sprites group missing")
+            pygame.quit()
+            return False
+        
+        # Check arrow pickup sprites group exists
+        if not hasattr(game, 'arrow_pickup_sprites'):
+            print("❌ FAIL: arrow_pickup_sprites group missing")
+            pygame.quit()
+            return False
+        
+        # Check arrow pickups spawned
+        pickup_count = len(game.arrow_pickup_sprites)
+        if pickup_count != ARROW_PICKUP_COUNT:
+            print(f"❌ FAIL: Should spawn {ARROW_PICKUP_COUNT} arrow pickups, got {pickup_count}")
+            pygame.quit()
+            return False
+        
+        # Check Wumpus has stun attributes
+        if not hasattr(game.wumpus, 'is_stunned'):
+            print("❌ FAIL: Wumpus missing 'is_stunned' attribute")
+            pygame.quit()
+            return False
+        
+        if not hasattr(game.wumpus, 'stun_timer'):
+            print("❌ FAIL: Wumpus missing 'stun_timer' attribute")
+            pygame.quit()
+            return False
+        
+        print("✅ PASS: Arrow combat system initializes correctly")
+        pygame.quit()
+        return True
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+        pygame.quit()
+        return False
+
+def test_arrow_shooting():
+    """Test that arrow shooting mechanics work correctly"""
+    print("\n=== Testing Arrow Shooting Mechanics ===")
+    from main import Game
+    import pygame
+    
+    pygame.init()
+    try:
+        game = Game()
+        
+        # Check player has shoot_arrow method
+        if not hasattr(game.player, 'shoot_arrow'):
+            print("❌ FAIL: Player missing 'shoot_arrow' method")
+            pygame.quit()
+            return False
+        
+        # Stop player movement (required to shoot)
+        game.player.direction = pygame.math.Vector2(0, 0)
+        game.player.facing = 'right'
+        initial_arrows = game.player.arrows
+        
+        # Try shooting
+        direction = game.player.shoot_arrow()
+        
+        # Check arrow was shot
+        if direction is None and initial_arrows > 0:
+            print("❌ FAIL: shoot_arrow should return direction when arrows available and not moving")
+            pygame.quit()
+            return False
+        
+        # Check arrow count decreased
+        if initial_arrows > 0 and game.player.arrows != initial_arrows - 1:
+            print(f"❌ FAIL: Arrow count should decrease from {initial_arrows} to {initial_arrows - 1}, got {game.player.arrows}")
+            pygame.quit()
+            return False
+        
+        # Test can't shoot while moving
+        game.player.direction = pygame.math.Vector2(1, 0)
+        game.player.arrows = 1
+        direction = game.player.shoot_arrow()
+        
+        if direction is not None:
+            print("❌ FAIL: Should not be able to shoot while moving")
+            pygame.quit()
+            return False
+        
+        print("✅ PASS: Arrow shooting mechanics work correctly")
+        pygame.quit()
+        return True
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+        pygame.quit()
+        return False
+
+def test_arrow_pickups():
+    """Test that arrow pickup system works correctly"""
+    print("\n=== Testing Arrow Pickup System ===")
+    from main import Game
+    import pygame
+    
+    pygame.init()
+    try:
+        game = Game()
+        
+        # Use all starting arrows
+        game.player.arrows = 0
+        
+        # Check add_arrows method exists
+        if not hasattr(game.player, 'add_arrows'):
+            print("❌ FAIL: Player missing 'add_arrows' method")
+            pygame.quit()
+            return False
+        
+        # Test adding arrows
+        result = game.player.add_arrows(1)
+        
+        if not result:
+            print("❌ FAIL: add_arrows should return True when successful")
+            pygame.quit()
+            return False
+        
+        if game.player.arrows != 1:
+            print(f"❌ FAIL: Arrow count should be 1 after pickup, got {game.player.arrows}")
+            pygame.quit()
+            return False
+        
+        # Test max arrows limit
+        game.player.arrows = game.player.max_arrows
+        initial_count = game.player.arrows
+        result = game.player.add_arrows(1)
+        
+        if result:
+            print("❌ FAIL: add_arrows should return False when at max capacity")
+            pygame.quit()
+            return False
+        
+        if game.player.arrows != initial_count:
+            print(f"❌ FAIL: Arrow count should not exceed max_arrows ({game.player.max_arrows})")
+            pygame.quit()
+            return False
+        
+        print("✅ PASS: Arrow pickup system works correctly")
+        pygame.quit()
+        return True
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+        pygame.quit()
+        return False
+
+def test_arrow_hit_detection():
+    """Test that arrow hit detection works correctly"""
+    print("\n=== Testing Arrow Hit Detection ===")
+    from main import Game
+    from sprites import Arrow
+    import pygame
+    
+    pygame.init()
+    try:
+        game = Game()
+        
+        # Check check_arrow_hits method exists
+        if not hasattr(game, 'check_arrow_hits'):
+            print("❌ FAIL: Game missing 'check_arrow_hits' method")
+            pygame.quit()
+            return False
+        
+        # Create arrow near Wumpus
+        wumpus_pos = game.wumpus.hitbox_rect.center
+        arrow = Arrow(wumpus_pos, (1, 0), [game.all_sprites, game.arrow_sprites], game.collision_sprites)
+        
+        initial_stun_state = game.wumpus.is_stunned
+        arrow_count_before = len(game.arrow_sprites)
+        
+        # Check for hits
+        game.check_arrow_hits()
+        
+        # Verify arrow was removed
+        arrow_count_after = len(game.arrow_sprites)
+        if arrow_count_after >= arrow_count_before:
+            print(f"❌ FAIL: Arrow should be removed after hitting Wumpus (before: {arrow_count_before}, after: {arrow_count_after})")
+            pygame.quit()
+            return False
+        
+        # Verify Wumpus was stunned
+        if not game.wumpus.is_stunned:
+            print("❌ FAIL: Wumpus should be stunned after arrow hit")
+            pygame.quit()
+            return False
+        
+        print("✅ PASS: Arrow hit detection works correctly")
+        pygame.quit()
+        return True
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+        pygame.quit()
+        return False
+
+def test_wumpus_stun():
+    """Test that Wumpus stun mechanics work correctly"""
+    print("\n=== Testing Wumpus Stun Mechanics ===")
+    from main import Game
+    from Settings import ARROW_STUN_DURATION
+    import pygame
+    
+    pygame.init()
+    try:
+        game = Game()
+        
+        # Check apply_stun method exists
+        if not hasattr(game.wumpus, 'apply_stun'):
+            print("❌ FAIL: Wumpus missing 'apply_stun' method")
+            pygame.quit()
+            return False
+        
+        # Apply stun
+        game.wumpus.apply_stun()
+        
+        # Verify stun state
+        if not game.wumpus.is_stunned:
+            print("❌ FAIL: Wumpus should be stunned after apply_stun()")
+            pygame.quit()
+            return False
+        
+        if game.wumpus.stun_timer != ARROW_STUN_DURATION:
+            print(f"❌ FAIL: stun_timer should be {ARROW_STUN_DURATION}, got {game.wumpus.stun_timer}")
+            pygame.quit()
+            return False
+        
+        if game.wumpus.ai_state != 'stunned':
+            print(f"❌ FAIL: ai_state should be 'stunned', got {game.wumpus.ai_state}")
+            pygame.quit()
+            return False
+        
+        # Verify movement frozen
+        if game.wumpus.direction != (0, 0):
+            print(f"❌ FAIL: Wumpus direction should be (0, 0) when stunned, got {game.wumpus.direction}")
+            pygame.quit()
+            return False
+        
+        # Simulate time passing (stun recovery)
+        game.wumpus.stun_timer = 0
+        game.wumpus.update(0.016)  # One frame
+        
+        if game.wumpus.is_stunned:
+            print("❌ FAIL: Wumpus should recover from stun when timer reaches 0")
+            pygame.quit()
+            return False
+        
+        print("✅ PASS: Wumpus stun mechanics work correctly")
+        pygame.quit()
+        return True
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+        pygame.quit()
+        return False
+
 def test_state_prevents_updates():
     """Test that VICTORY and GAME_OVER states prevent game updates"""
     print("\n=== Testing State Prevents Updates ===")
@@ -519,12 +821,17 @@ def test_state_prevents_updates():
 def main():
     print("=" * 60)
     print("PHASE 1.5.1 VERIFICATION TEST")
-    print("Testing Treasure Hunt Mechanics")
+    print("Testing Treasure Hunt Mechanics + Arrow Combat")
     print("=" * 60)
     
     tests = [
         ("GameState Enum", test_game_state_enum),
         ("Game Initialization", test_game_initialization),
+        ("Arrow Combat Initialization", test_arrow_combat_initialization),
+        ("Arrow Shooting Mechanics", test_arrow_shooting),
+        ("Arrow Pickup System", test_arrow_pickups),
+        ("Arrow Hit Detection", test_arrow_hit_detection),
+        ("Wumpus Stun Mechanics", test_wumpus_stun),
         ("Treasure Collection", test_treasure_collection),
         ("New Victory Condition", test_new_victory_condition),
         ("Game Over by Wumpus", test_game_over_by_wumpus),

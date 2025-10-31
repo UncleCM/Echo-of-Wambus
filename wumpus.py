@@ -17,8 +17,13 @@ class Wumpus(Entity):
         self.attack_range = 50  # Pixels within which Wumpus can attack
         self.detection_range = 300  # Pixels within which Wumpus detects player
         
+        # Stun mechanics (arrow combat)
+        self.is_stunned = False
+        self.stun_timer = 0
+        self.stun_duration = ARROW_STUN_DURATION  # From Settings.py
+        
         # AI state
-        self.ai_state = 'patrol'  # 'patrol', 'chase', 'attack', 'dead'
+        self.ai_state = 'patrol'  # 'patrol', 'chase', 'attack', 'stunned', 'dead'
         self.patrol_points = []  # Will be set by map/AI
         self.current_patrol_index = 0
         self.target_position = None
@@ -266,6 +271,21 @@ class Wumpus(Entity):
         
         return damage_taken
     
+    def apply_stun(self, duration=None):
+        """
+        Apply stun effect to Wumpus (from arrow hit).
+        Wumpus freezes in place and cannot move or attack.
+        """
+        if duration is None:
+            duration = self.stun_duration
+        
+        self.is_stunned = True
+        self.stun_timer = duration
+        self.ai_state = 'stunned'
+        self.direction = pygame.math.Vector2(0, 0)  # Stop moving
+        
+        print(f"[Wumpus] Stunned for {duration} seconds!")
+    
     def on_death(self):
         """Handle Wumpus death"""
         super().on_death()
@@ -276,8 +296,22 @@ class Wumpus(Entity):
     
     def update(self, dt):
         """Update Wumpus every frame - AI update must be called separately"""
+        # Update stun timer
+        if self.is_stunned:
+            self.stun_timer -= dt
+            if self.stun_timer <= 0:
+                self.is_stunned = False
+                self.ai_state = 'patrol'  # Return to patrol after stun
+                print("[Wumpus] Recovered from stun!")
+        
         if not self.is_alive:
             # Still animate death
+            self.animate(dt)
+            return
+        
+        # Can't move while stunned
+        if self.is_stunned:
+            self.direction = pygame.math.Vector2(0, 0)
             self.animate(dt)
             return
         

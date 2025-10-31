@@ -10,12 +10,13 @@ class Player(Entity):
         # Player-specific attributes
         self.speed = 200  # Player movement speed
         
-        # Combat attributes
-        self.attack_damage = 50  # Damage dealt to enemies
-        self.attack_range = 80  # Attack range in pixels
-        self.attack_cooldown = 0.5  # Seconds between attacks
-        self.attack_timer = 0  # Time since last attack
-        self.is_attacking = False  # Currently in attack animation
+        # Arrow combat system
+        self.arrows = STARTING_ARROWS  # Current arrow count
+        self.max_arrows = MAX_ARROWS   # Maximum arrows can carry
+        self.attack_cooldown = ATTACK_COOLDOWN / 1000.0  # Convert ms to seconds
+        self.attack_timer = 0  # Time since last shot
+        self.is_attacking = False  # Currently shooting (prevents movement)
+        self.attack_duration = 0.3  # Time player is frozen during shoot animation
         
         # Load player animations
         self.animations = self.load_animations()
@@ -75,11 +76,7 @@ class Player(Entity):
         """Handle player input"""
         keys = pygame.key.get_pressed()
         
-        # Attack input (Spacebar)
-        if keys[pygame.K_SPACE] and not self.is_attacking and self.attack_timer <= 0:
-            self.attack()
-        
-        # Can't move while attacking
+        # Can't move or shoot while attacking (shooting animation)
         if self.is_attacking:
             self.direction.x = 0
             self.direction.y = 0
@@ -108,12 +105,63 @@ class Player(Entity):
         if self.direction.magnitude() > 0:
             self.direction = self.direction.normalize()
     
-    def attack(self):
-        """Trigger attack action"""
+    def shoot_arrow(self):
+        """
+        Shoot an arrow in the direction player is facing.
+        Returns arrow direction vector if shot successful, None otherwise.
+        Can only shoot if:
+        - Has arrows > 0
+        - Not currently attacking
+        - Attack cooldown finished
+        - Player is NOT moving (must stop to shoot)
+        """
+        # Check if can shoot
+        if self.arrows <= 0:
+            print("[Player] No arrows left!")
+            return None
+        
+        if self.is_attacking:
+            return None
+        
+        if self.attack_timer > 0:
+            return None
+        
+        # Must be standing still to shoot (direction magnitude == 0)
+        if self.direction.magnitude() > 0:
+            print("[Player] Must stop moving to shoot!")
+            return None
+        
+        # Convert facing direction to vector
+        direction_map = {
+            'down': (0, 1),
+            'up': (0, -1),
+            'left': (-1, 0),
+            'right': (1, 0)
+        }
+        
+        arrow_direction = direction_map.get(self.facing, (0, 1))
+        
+        # Start attack animation
         self.is_attacking = True
         self.attack_timer = self.attack_cooldown
-        # Animation will be handled in animate()
-        print(f"[Player] Attack! Range: {self.attack_range}, Damage: {self.attack_damage}")
+        self.arrows -= 1
+        
+        print(f"[Player] Shot arrow! Arrows remaining: {self.arrows}/{self.max_arrows}")
+        return arrow_direction
+    
+    def add_arrows(self, amount=1):
+        """Pick up arrows from ArrowPickup"""
+        if self.arrows < self.max_arrows:
+            self.arrows = min(self.arrows + amount, self.max_arrows)
+            print(f"[Player] Picked up {amount} arrow(s)! Total: {self.arrows}/{self.max_arrows}")
+            return True
+        else:
+            print(f"[Player] Arrow capacity full! ({self.max_arrows}/{self.max_arrows})")
+            return False
+    
+    def attack(self):
+        """Deprecated - replaced by shoot_arrow()"""
+        pass
     
     def animate(self, dt):
         """Update animation frames"""
@@ -190,6 +238,6 @@ class Player(Entity):
         
         # Check if attack animation finished
         if self.is_attacking:
-            # Attack animation duration (assume ~0.3 seconds for attack)
-            if self.attack_timer <= self.attack_cooldown - 0.3:
+            # Attack animation duration
+            if self.attack_timer <= self.attack_cooldown - self.attack_duration:
                 self.is_attacking = False

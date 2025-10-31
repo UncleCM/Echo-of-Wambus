@@ -1,15 +1,162 @@
 # Phase 1.5.1 Manual Testing Checklist
-**Treasure Hunt Mechanics Verification**
+**Treasure Hunt Mechanics + Arrow Combat System Verification**
 
 ## Prerequisites
 - [ ] Game runs without errors (`python main.py`)
 - [ ] Player and Wumpus spawn correctly
-- [ ] Treasure and Exit Portal spawn correctly
+- [ ] Treasure, Exit Portal, and Arrow Pickups spawn correctly
 - [ ] Debug mode available (F3)
 
 ---
 
-## Test 1: Treasure Spawning and Collection
+## Test 1: Arrow Combat Initialization
+**Objective:** Verify arrow combat system initializes correctly
+
+**Steps:**
+1. Start the game
+2. Check HUD for arrow count display (🏹 icon)
+3. Press F3 to observe arrow pickup sprites
+4. Count arrow pickups in the world
+
+**Expected Results:**
+- ✅ Player starts with 1 arrow (HUD shows: 🏹 x1/2)
+- ✅ 3 arrow pickups spawn in the world (cyan glowing quivers)
+- ✅ Arrow count displays in HUD at top-left
+- ✅ Arrow count shows gray when arrows > 0, red when 0
+- ✅ No errors in console
+
+**Status:** ⬜ Pass / ⬜ Fail
+
+**Notes:** _________________________________
+
+---
+
+## Test 2: Arrow Shooting Mechanics
+**Objective:** Verify arrow shooting works correctly with movement restriction
+
+**Steps:**
+1. Start the game
+2. Try shooting while moving (press Space while walking)
+3. Stop moving completely
+4. Press Space to shoot arrow
+5. Observe arrow projectile
+
+**Expected Results:**
+- ✅ Cannot shoot while moving (console shows "Must stop moving to shoot!")
+- ✅ Can shoot when standing still
+- ✅ Arrow count decreases by 1 after shooting
+- ✅ Arrow projectile appears and flies in facing direction
+- ✅ Arrow has proper rotation based on direction
+- ✅ Arrow disappears after max distance (~450 pixels)
+- ✅ Arrow disappears when hitting walls
+
+**Status:** ⬜ Pass / ⬜ Fail
+
+**Notes:** _________________________________
+
+---
+
+## Test 3: Arrow Pickup Collection
+**Objective:** Verify arrow pickups can be collected and respect limits
+
+**Steps:**
+1. Start game (1 arrow, max 2)
+2. Shoot arrow to use it (now 0/2)
+3. Find and walk into arrow pickup
+4. Collect second arrow pickup
+5. Try collecting third pickup
+
+**Expected Results:**
+- ✅ Arrow pickups have cyan glow animation
+- ✅ Walking into pickup collects it instantly
+- ✅ Pickup disappears permanently after collection
+- ✅ Arrow count increases by 1 (max 2)
+- ✅ Console shows pickup message with current count
+- ✅ Cannot collect when at max (2/2) arrows
+- ✅ HUD updates correctly
+
+**Status:** ⬜ Pass / ⬜ Fail
+
+**Arrow Count Journey:** Start: 1/2 → After use: _/2 → After pickup 1: _/2 → After pickup 2: _/2
+
+---
+
+## Test 4: Arrow Hit Detection
+**Objective:** Verify arrows hit Wumpus reliably with improved detection
+
+**Steps:**
+1. Start game
+2. Locate Wumpus
+3. Stand facing Wumpus at various distances
+4. Shoot arrows at Wumpus (close range, medium range)
+5. Try shooting from different angles
+
+**Expected Results:**
+- ✅ Arrow hits Wumpus when aimed directly (hitbox collision)
+- ✅ Arrow hits Wumpus within ~60 pixel radius (distance detection)
+- ✅ Hit detection works at close range (face-to-face)
+- ✅ Hit detection works at medium range
+- ✅ Console shows hit message with distance
+- ✅ Arrow disappears on hit
+- ✅ Wumpus gets stunned on hit
+
+**Status:** ⬜ Pass / ⬜ Fail
+
+**Hit Rate:** Shots fired: ___ / Hits: ___ / Miss: ___
+
+---
+
+## Test 5: Wumpus Stun Mechanics
+**Objective:** Verify Wumpus stun behavior works correctly
+
+**Steps:**
+1. Start game
+2. Shoot arrow at Wumpus to trigger stun
+3. Observe Wumpus behavior during stun
+4. Wait 3 seconds
+5. Observe Wumpus behavior after stun ends
+
+**Expected Results:**
+- ✅ Wumpus freezes completely when stunned
+- ✅ Console shows "Wumpus stunned for 3 seconds!" message
+- ✅ Wumpus does not move for 3 seconds
+- ✅ Wumpus does not attack while stunned
+- ✅ AI state shows 'stunned' (if debug visible)
+- ✅ After 3 seconds, Wumpus returns to patrol
+- ✅ Wumpus resumes normal behavior after recovery
+
+**Status:** ⬜ Pass / ⬜ Fail
+
+**Stun Duration Observed:** _____ seconds
+
+---
+
+## Test 6: Arrow Resource Management
+**Objective:** Verify tactical gameplay with limited arrows
+
+**Steps:**
+1. Start game (1 arrow)
+2. Shoot all starting arrows (1 shot)
+3. Try shooting when out of arrows
+4. Collect all 3 pickups
+5. Use all arrows (should have used 4 total: 1 start + 3 pickups)
+6. Verify no more arrows available
+
+**Expected Results:**
+- ✅ Cannot shoot when arrow count = 0
+- ✅ Console feedback when trying to shoot without arrows
+- ✅ Maximum total arrows available: 4 (1 start + 3 pickups)
+- ✅ Can never carry more than 2 arrows at once
+- ✅ Pickups do not respawn
+- ✅ Strategy required to manage limited arrows
+
+**Status:** ⬜ Pass / ⬜ Fail
+
+**Total Arrows Used:** _____ (expected: 4 maximum)
+
+---
+
+## Test 7: Treasure Spawning and Collection
 **Objective:** Verify treasure spawns and can be collected
 
 **Steps:**
@@ -300,21 +447,27 @@
 ---
 
 ## Test 13: HUD Display Accuracy
-**Objective:** Verify HUD shows correct treasure and exit status
+**Objective:** Verify HUD shows correct arrow count, treasure and exit status
 
 **Steps:**
 1. Start the game
 2. Check HUD icons at start
-3. Collect treasure
-4. Check HUD icons after collection
+3. Shoot an arrow
+4. Collect treasure
+5. Collect arrow pickup
+6. Check HUD updates
 
 **Expected Results:**
-- ✅ Timer displays correctly (MM:SS format)
+- ✅ Timer displays correctly (MM:SS format) at top center
+- ✅ Arrow count shows 🏹 x1/2 at start (top-left)
+- ✅ Arrow count turns red when 0 arrows
+- ✅ Arrow count updates immediately after shooting
+- ✅ Arrow count updates immediately after pickup
 - ✅ Treasure icon starts as ⬜ (uncollected)
 - ✅ Exit icon starts as 🔒 (locked)
 - ✅ After collection, treasure icon becomes ✓
 - ✅ After collection, exit icon becomes 🔓
-- ✅ Icons are clearly visible and understandable
+- ✅ All icons are clearly visible and understandable
 
 **Status:** ⬜ Pass / ⬜ Fail
 
@@ -370,8 +523,35 @@
 
 ---
 
+## Test 16: Integrated Gameplay - Arrow Combat + Treasure Hunt
+**Objective:** Verify complete gameplay loop with arrow combat
+
+**Steps:**
+1. Start game
+2. Use starting arrow to stun Wumpus
+3. Collect treasure while Wumpus is stunned
+4. Collect arrow pickups
+5. Use arrows to stun Wumpus when chased
+6. Navigate to exit
+7. Escape to win
+
+**Expected Results:**
+- ✅ Can stun Wumpus to create safe window
+- ✅ Treasure collection triggers enrage during stun
+- ✅ Enraged Wumpus is faster after recovering from stun
+- ✅ Arrow pickups help survive enraged chase
+- ✅ Strategic arrow use enables escape
+- ✅ Victory achievable with smart arrow management
+- ✅ Gameplay feels tactical and skill-based
+
+**Status:** ⬜ Pass / ⬜ Fail
+
+**Strategy Used:** _________________________________
+
+---
+
 ## Summary
-- **Total Tests:** 15
+- **Total Tests:** 21 (6 new arrow combat tests + 15 original)
 - **Passed:** ___
 - **Failed:** ___
 - **Overall Status:** ⬜ Ready for Phase 2 / ⬜ Needs Fixes
@@ -390,6 +570,30 @@ _List any minor bugs or polish issues:_
 2. ___________________________________
 3. ___________________________________
 
+## Arrow Combat Feedback
+_Specific feedback on arrow combat system:_
+
+**Hit Detection:**
+- Too easy / Just right / Too hard: _______________
+- Suggested improvements: _______________
+
+**Arrow Shooting:**
+- Stop-to-shoot mechanic: Good / Frustrating: _______________
+- Suggested changes: _______________
+
+**Resource Management:**
+- 4 total arrows: Too few / Just right / Too many: _______________
+- Max 2 carrying: Good / Should be different: _______________
+
+**Stun Duration:**
+- 3 seconds: Too short / Just right / Too long: _______________
+- Suggested duration: _______________
+
+**Overall Feel:**
+- Tactical gameplay: Yes / No: _______________
+- Fun factor: ___/10
+- Difficulty: Too easy / Balanced / Too hard: _______________
+
 ## Recommendations
 _Suggestions for improvement:_
 
@@ -403,14 +607,16 @@ _Suggestions for improvement:_
 - [ ] If all tests pass: **Begin Phase 2 (Polish & Features)**
 - [ ] If tests fail: **Fix issues and re-test**
 - [ ] Consider adding: 
-  - Stun mechanic for combat (instead of kill)
-  - Visual effects for enraged Wumpus (red glow)
-  - Better treasure sparkle particles
-  - Sound effects for collection/escape
+  - Visual stun effect on Wumpus (stars/dizzy animation)
+  - Better arrow trail particles
+  - Hit impact effect (spark/flash)
+  - Arrow pickup sparkle enhancement
+  - Sound effects for shooting/hit/stun
+  - Charging/aiming indicator
 
 ---
 
 **Tester:** ________________  
 **Date:** ________________  
 **Branch:** comlete-base-game  
-**Phase:** 1.5.1 - Treasure Hunt Mechanics
+**Phase:** 1.5.1 - Treasure Hunt Mechanics + Arrow Combat

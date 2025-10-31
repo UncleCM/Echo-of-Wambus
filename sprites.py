@@ -152,3 +152,106 @@ class ExitPortal(pygame.sprite.Sprite):
             # Core portal
             pygame.draw.circle(self.image, (255, 215, 0), (size//2, size//2), size//3)
             pygame.draw.circle(self.image, (255, 255, 200), (size//2, size//2), size//4)
+
+class Arrow(pygame.sprite.Sprite):
+    """Arrow projectile shot by player"""
+    def __init__(self, pos, direction, groups, collision_sprites):
+        super().__init__(groups)
+        
+        from Settings import ARROW_SPEED, ARROW_MAX_DISTANCE
+        
+        # Arrow properties
+        self.direction = pygame.math.Vector2(direction).normalize() if direction != (0, 0) else pygame.math.Vector2(1, 0)
+        self.speed = ARROW_SPEED
+        self.max_distance = ARROW_MAX_DISTANCE
+        self.distance_traveled = 0
+        self.collision_sprites = collision_sprites
+        
+        # Create arrow visual (8x32 pixels - thin and long)
+        arrow_length = 32
+        arrow_width = 8
+        self.base_image = pygame.Surface((arrow_length, arrow_width), pygame.SRCALPHA)
+        
+        # Draw arrow (brown shaft, gray tip)
+        pygame.draw.rect(self.base_image, (139, 90, 43), (0, 2, 28, 4))  # Shaft
+        pygame.draw.polygon(self.base_image, (128, 128, 128), [(28, 0), (32, 4), (28, 8)])  # Arrowhead
+        
+        # Rotate based on direction
+        angle = math.degrees(math.atan2(-self.direction.y, self.direction.x))
+        self.image = pygame.transform.rotate(self.base_image, angle)
+        
+        # Position
+        self.pos = pygame.math.Vector2(pos)
+        self.rect = self.image.get_rect(center=self.pos)
+        # Use full rect for better hit detection (no shrinking)
+        self.hitbox_rect = self.rect.copy()
+    
+    def update(self, dt):
+        """Move arrow and check for destruction"""
+        # Move arrow
+        movement = self.direction * self.speed
+        self.pos += movement
+        self.rect.center = self.pos
+        self.hitbox_rect.center = self.pos
+        
+        # Track distance
+        self.distance_traveled += self.speed
+        
+        # Check if exceeded max distance
+        if self.distance_traveled >= self.max_distance:
+            self.kill()
+            return
+        
+        # Check collision with walls
+        if self.check_wall_collision():
+            self.kill()
+            return
+    
+    def check_wall_collision(self):
+        """Check if arrow hit a wall"""
+        for sprite in self.collision_sprites:
+            if hasattr(sprite, 'rect') and self.hitbox_rect.colliderect(sprite.rect):
+                return True
+        return False
+
+class ArrowPickup(pygame.sprite.Sprite):
+    """Arrow pickup collectible - gives +1 arrow"""
+    def __init__(self, pos, groups):
+        super().__init__(groups)
+        
+        # Create quiver/arrow bundle visual
+        size = 24
+        self.image = pygame.Surface((size, size), pygame.SRCALPHA)
+        
+        # Draw quiver icon (brown rectangle with arrows)
+        pygame.draw.rect(self.image, (101, 67, 33), (4, 8, 16, 12))  # Quiver
+        pygame.draw.line(self.image, (200, 200, 200), (8, 6), (8, 2), 2)  # Arrow 1
+        pygame.draw.line(self.image, (200, 200, 200), (12, 6), (12, 2), 2)  # Arrow 2
+        pygame.draw.line(self.image, (200, 200, 200), (16, 6), (16, 2), 2)  # Arrow 3
+        
+        self.base_image = self.image.copy()
+        self.rect = self.image.get_rect(center=pos)
+        self.hitbox_rect = self.rect.inflate(-8, -8)
+        
+        # Animation
+        self.glow_timer = 0
+        self.glow_speed = 3
+    
+    def update(self, dt):
+        """Animate glow effect"""
+        self.glow_timer += dt * self.glow_speed
+        
+        # Pulsing glow effect (cyan/blue)
+        glow_alpha = int(128 + 127 * abs(math.sin(self.glow_timer)))
+        
+        # Recreate image with glow
+        size = 24
+        self.image = pygame.Surface((size, size), pygame.SRCALPHA)
+        
+        # Outer glow
+        glow_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (100, 200, 255, glow_alpha), (size//2, size//2), size//2)
+        self.image.blit(glow_surf, (0, 0))
+        
+        # Draw quiver on top
+        self.image.blit(self.base_image, (0, 0))
