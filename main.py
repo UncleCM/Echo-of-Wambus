@@ -159,6 +159,40 @@ class Game:
                 print("GAME OVER - Fell into a hole! (Prolog detected)")
                 return True
         return False
+    
+    def check_player_attack(self):
+        """Check if player's attack hits the Wumpus"""
+        # Calculate distance between player and Wumpus
+        player_pos = pygame.math.Vector2(self.player.hitbox_rect.center)
+        wumpus_pos = pygame.math.Vector2(self.wumpus.hitbox_rect.center)
+        distance = player_pos.distance_to(wumpus_pos)
+        
+        # Check if Wumpus is in attack range
+        if distance <= self.player.attack_range:
+            damage = self.wumpus.take_damage(self.player.attack_damage)
+            print(f"[Combat] Player hit Wumpus for {damage} damage! Wumpus HP: {self.wumpus.health}/{self.wumpus.max_health}")
+            
+            # Check if Wumpus died
+            if not self.wumpus.is_alive:
+                print("VICTORY - Wumpus defeated!")
+                # TODO: Win condition handling
+    
+    def check_wumpus_attack(self):
+        """Check if Wumpus's attack hits the Player"""
+        # Calculate distance between Wumpus and Player
+        player_pos = pygame.math.Vector2(self.player.hitbox_rect.center)
+        wumpus_pos = pygame.math.Vector2(self.wumpus.hitbox_rect.center)
+        distance = player_pos.distance_to(wumpus_pos)
+        
+        # Check if Player is in Wumpus attack range
+        if distance <= self.wumpus.attack_range:
+            damage = self.player.take_damage(self.wumpus.damage)
+            print(f"[Combat] Wumpus hit Player for {damage} damage! Player HP: {self.player.health}/{self.player.max_health}")
+            
+            # Check if Player died
+            if not self.player.is_alive:
+                self.game_over = True
+                print("GAME OVER - Player defeated by Wumpus!")
 
     def draw_flashlight(self):
         """Draw a directional flashlight beam based on player facing direction."""
@@ -246,6 +280,14 @@ class Game:
                 # Update all sprites (Player and Wumpus movement/animation)
                 self.all_sprites.update(dt)
                 
+                # Check player attack hit Wumpus
+                if self.player.is_attacking and self.wumpus.is_alive:
+                    self.check_player_attack()
+                
+                # Check Wumpus attack hit Player
+                if self.wumpus.ai_state == 'attack' and self.player.is_alive:
+                    self.check_wumpus_attack()
+                
                 # Update Prolog with current player position
                 self.prolog.update_player_position(int(self.player.rect.x), int(self.player.rect.y))
                 self.check_game_over()
@@ -273,6 +315,12 @@ class Game:
                 offset_hitbox.topleft -= offset
                 pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
                 
+                # Draw Player attack range
+                if self.player.is_attacking:
+                    player_center = self.player.hitbox_rect.center
+                    screen_center = (int(player_center[0] - offset.x), int(player_center[1] - offset.y))
+                    pygame.draw.circle(self.screen, (255, 255, 0), screen_center, self.player.attack_range, 2)
+                
                 # Draw Wumpus hitbox and detection range
                 if self.wumpus.is_alive:
                     wumpus_hitbox = self.wumpus.hitbox_rect.copy()
@@ -288,6 +336,34 @@ class Game:
                     font = pygame.font.Font(None, 24)
                     state_text = font.render(f"AI: {self.wumpus.ai_state}", True, (255, 255, 255))
                     self.screen.blit(state_text, (screen_center[0] - 40, screen_center[1] - 100))
+                    
+                    # Wumpus health bar
+                    health_percent = self.wumpus.health / self.wumpus.max_health
+                    bar_width = 100
+                    bar_height = 10
+                    bar_x = screen_center[0] - bar_width // 2
+                    bar_y = screen_center[1] - 120
+                    # Background (red)
+                    pygame.draw.rect(self.screen, (100, 0, 0), (bar_x, bar_y, bar_width, bar_height))
+                    # Health (green)
+                    pygame.draw.rect(self.screen, (0, 255, 0), (bar_x, bar_y, int(bar_width * health_percent), bar_height))
+                    # Border
+                    pygame.draw.rect(self.screen, (255, 255, 255), (bar_x, bar_y, bar_width, bar_height), 1)
+                
+                # Player health bar
+                player_center = self.player.hitbox_rect.center
+                screen_center = (int(player_center[0] - offset.x), int(player_center[1] - offset.y))
+                health_percent = self.player.health / self.player.max_health
+                bar_width = 100
+                bar_height = 10
+                bar_x = screen_center[0] - bar_width // 2
+                bar_y = screen_center[1] - 80
+                # Background (red)
+                pygame.draw.rect(self.screen, (100, 0, 0), (bar_x, bar_y, bar_width, bar_height))
+                # Health (green)
+                pygame.draw.rect(self.screen, (0, 255, 0), (bar_x, bar_y, int(bar_width * health_percent), bar_height))
+                # Border
+                pygame.draw.rect(self.screen, (255, 255, 255), (bar_x, bar_y, bar_width, bar_height), 1)
                 
                 feet_height = 10
                 feet_rect = pygame.Rect(

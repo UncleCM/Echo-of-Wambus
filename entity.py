@@ -171,16 +171,20 @@ class Entity(pygame.sprite.Sprite):
     def take_damage(self, amount):
         """
         Apply damage to entity
+        Returns the actual damage dealt
         """
         if not self.is_alive:
-            return
+            return 0
         
+        actual_damage = min(amount, self.health)
         self.health -= amount
         
         if self.health <= 0:
             self.health = 0
             self.is_alive = False
             self.on_death()
+        
+        return actual_damage
     
     def heal(self, amount):
         """

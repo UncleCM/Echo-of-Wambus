@@ -10,6 +10,13 @@ class Player(Entity):
         # Player-specific attributes
         self.speed = 200  # Player movement speed
         
+        # Combat attributes
+        self.attack_damage = 50  # Damage dealt to enemies
+        self.attack_range = 80  # Attack range in pixels
+        self.attack_cooldown = 0.5  # Seconds between attacks
+        self.attack_timer = 0  # Time since last attack
+        self.is_attacking = False  # Currently in attack animation
+        
         # Load player animations
         self.animations = self.load_animations()
         
@@ -68,6 +75,16 @@ class Player(Entity):
         """Handle player input"""
         keys = pygame.key.get_pressed()
         
+        # Attack input (Spacebar)
+        if keys[pygame.K_SPACE] and not self.is_attacking and self.attack_timer <= 0:
+            self.attack()
+        
+        # Can't move while attacking
+        if self.is_attacking:
+            self.direction.x = 0
+            self.direction.y = 0
+            return
+        
         # Reset direction
         self.direction.x = 0
         self.direction.y = 0
@@ -90,6 +107,13 @@ class Player(Entity):
         # Normalize diagonal movement
         if self.direction.magnitude() > 0:
             self.direction = self.direction.normalize()
+    
+    def attack(self):
+        """Trigger attack action"""
+        self.is_attacking = True
+        self.attack_timer = self.attack_cooldown
+        # Animation will be handled in animate()
+        print(f"[Player] Attack! Range: {self.attack_range}, Damage: {self.attack_damage}")
     
     def animate(self, dt):
         """Update animation frames"""
@@ -156,6 +180,16 @@ class Player(Entity):
     
     def update(self, dt):
         """Update player every frame"""
+        # Update attack cooldown timer
+        if self.attack_timer > 0:
+            self.attack_timer -= dt
+        
         self.input()
         self.move(dt)
         self.animate(dt)
+        
+        # Check if attack animation finished
+        if self.is_attacking:
+            # Attack animation duration (assume ~0.3 seconds for attack)
+            if self.attack_timer <= self.attack_cooldown - 0.3:
+                self.is_attacking = False
