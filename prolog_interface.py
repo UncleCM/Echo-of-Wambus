@@ -3,12 +3,17 @@ from Settings import *
 
 class PrologEngine:
     def __init__(self):
+        # Set available flag first to prevent AttributeError in _query
+        self.available = False
+        self.prolog = None
+        
         try:
             self.prolog = Prolog()
             # Load the Prolog knowledge base
             self.prolog.consult("game_logic.pl")
-            self.init_game()
+            # Now that prolog is ready, set available to True BEFORE calling init_game
             self.available = True
+            self.init_game()
             print("[PrologEngine] Initialized successfully")
         except Exception as e:
             print(f"[PrologEngine] Failed to initialize: {e}")

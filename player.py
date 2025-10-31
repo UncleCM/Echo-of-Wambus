@@ -1,47 +1,28 @@
 from Settings import *
+from entity import Entity
 
-class Player(pygame.sprite.Sprite):
+class Player(Entity):
+    """Player character - controlled by user input"""
     def __init__(self, pos, groups, collision_sprites, prolog_engine=None):
-        super().__init__(groups)
+        # Initialize base Entity
+        super().__init__(pos, groups, collision_sprites, prolog_engine, entity_type='player')
     
-        # Frame settings - adjust these based on your sprite size
-        self.frame_width = 48  # Width of each individual frame (384/8 = 48)
-        self.frame_height = 64  # Height of each frame
-        self.scale_factor = 2  # Scale up 2x for better visibility
-        self.z = 1 # Draw on top of tiles (tiles are z=0)
-            
-            # Store prolog engine reference
-        self.prolog = prolog_engine
+        # Player-specific attributes
+        self.speed = 200  # Player movement speed
         
-        # Animation settings
-        self.animation_timer = 0
-        self.animation_speed = 12  # Frames per second
-        self.previous_animation = 'idle_down'
-        
-        # Load animations from sprite strip files
+        # Load player animations
         self.animations = self.load_animations()
         
         print(f"Loaded {len(self.animations)} animation states")
         for anim_name, frames in self.animations.items():
             print(f"  {anim_name}: {len(frames)} frames")
         
-        # Current animation state
+        # Setup sprite and hitbox
         self.current_animation = 'idle_down'
-        self.image = self.animations[self.current_animation][0]
-        self.rect = self.image.get_rect(center=pos)
-        self.hitbox_rect = self.rect.inflate(-75, -75)  # Better hitbox size (was -70, -70)
-
+        initial_image = self.animations[self.current_animation][0]
+        self.setup_sprite(initial_image, hitbox_inflate=(-75, -75))
+        
         print(f"First frame size: {self.image.get_size()}")
-        
-        # Movement
-        self.direction = pygame.math.Vector2()
-        self.speed = 200
-        self.facing = 'down'
-        self.collision_sprites = collision_sprites
-        
-        # Fractional movement remainder (to prevent stuttering from rounding small deltas)
-        self._rem_x = 0.0
-        self._rem_y = 0.0
     
         # ... rest of the load_animations, load_sprite_strip, input, and animate methods stay the same ...
     
@@ -82,55 +63,6 @@ class Player(pygame.sprite.Sprite):
             animations['death'] = animations['idle_down']  # Fallback
         
         return animations
-    
-    def load_sprite_strip(self, filepath):
-        """Extract individual frames from a horizontal sprite strip"""
-        try:
-            # Load the sprite strip
-            sprite_strip = pygame.image.load(join('assets', filepath)).convert_alpha()
-            strip_width = sprite_strip.get_width()
-            strip_height = sprite_strip.get_height()
-            
-            print(f"Loading {filepath}: {strip_width}x{strip_height}")
-            
-            # Calculate number of frames (should be 8 for 384px wide sprites)
-            num_frames = strip_width // self.frame_width
-            
-            print(f"  Extracting {num_frames} frames of {self.frame_width}x{self.frame_height}")
-            
-            # Extract frames - USE ALL FRAMES
-            frames = []
-            
-            for i in range(num_frames):  # Use ALL 8 frames
-                # Extract the full height frame
-                frame_rect = pygame.Rect(i * self.frame_width, 0, self.frame_width, self.frame_height)
-                frame = sprite_strip.subsurface(frame_rect).copy()
-                
-                # Scale if needed
-                if self.scale_factor != 1:
-                    scaled_frame = pygame.transform.scale(frame, 
-                        (self.frame_width * self.scale_factor, self.frame_height * self.scale_factor))
-                    frames.append(scaled_frame)
-                else:
-                    frames.append(frame)
-            
-            if frames:
-                print(f"Successfully loaded {len(frames)} frames from {filepath} (sampled from {num_frames} total)")
-                return frames
-            else:
-                # Create placeholder with scaled size
-                placeholder = pygame.Surface((self.frame_width * self.scale_factor, 
-                                            self.frame_height * self.scale_factor), pygame.SRCALPHA)
-                pygame.draw.rect(placeholder, (255, 0, 255), placeholder.get_rect(), 2)
-                return [placeholder]
-            
-        except FileNotFoundError:
-            print(f"Warning: Could not load sprite strip: {filepath}")
-            # Create placeholder with scaled size
-            placeholder = pygame.Surface((self.frame_width * self.scale_factor, 
-                                        self.frame_height * self.scale_factor), pygame.SRCALPHA)
-            pygame.draw.rect(placeholder, (255, 0, 255), placeholder.get_rect(), 2)
-            return [placeholder]
     
     def input(self):
         """Handle player input"""
@@ -222,96 +154,8 @@ class Player(pygame.sprite.Sprite):
         # Update image
         self.image = animation_frames[frame_index]
     
-    def move(self, dt):
-        """
-        Move the player, using Prolog for authoritative collision resolution.
-        The core collision logic is now in game_logic.pl.
-        """
-        if self.direction.length() == 0:
-            # Keep Prolog's authoritative position in sync when idle
-            if self.prolog and getattr(self.prolog, 'available', False):
-                try:
-                    self.prolog.update_player_position(int(self.hitbox_rect.x), int(self.hitbox_rect.y))
-                except Exception:
-                    pass
-            return
-
-        # Calculate movement deltas
-        delta_x = self.direction.x * self.speed * dt
-        delta_y = self.direction.y * self.speed * dt
-        
-        # =========================================================================
-        # PROLOG AUTHORITATIVE MOVEMENT RESOLUTION
-        # =========================================================================
-        if self.prolog and getattr(self.prolog, 'available', False):
-            # Get current hitbox position (must be integers for Prolog)
-            current_x = int(self.hitbox_rect.x)
-            current_y = int(self.hitbox_rect.y)
-            
-            # Accumulate fractional movement to avoid losing small deltas (prevent stutter)
-            self._rem_x += delta_x
-            self._rem_y += delta_y
-            
-            # Convert accumulated movement to integers for Prolog call
-            int_delta_x = int(round(self._rem_x))
-            int_delta_y = int(round(self._rem_y))
-            
-            # Subtract sent integer portion from remainder (keep fractional part)
-            self._rem_x -= int_delta_x
-            self._rem_y -= int_delta_y
-            
-            player_w = self.hitbox_rect.width
-            player_h = self.hitbox_rect.height
-            
-            # Prolog resolves collision and updates its internal position fact
-            try:
-                resolved_x, resolved_y = self.prolog.resolve_movement(
-                    current_x, current_y, 
-                    int_delta_x, int_delta_y, 
-                    player_w, player_h
-                )
-                # Update Python's hitbox with the authoritative resolved position
-                self.hitbox_rect.x = resolved_x
-                self.hitbox_rect.y = resolved_y
-            except Exception as e:
-                print(f"[Player] Prolog resolve_movement failed: {e}")
-                # On error, keep current position (don't crash the game)
-                pass
-
-        else:
-            # Fallback to original collision system (only if Prolog unavailable)
-            new_x = self.hitbox_rect.x + delta_x
-            new_y = self.hitbox_rect.y + delta_y
-            
-            self.hitbox_rect.x = new_x
-            self.collision('horizontal')
-            self.hitbox_rect.y = new_y
-            self.collision('vertical')
-
-        self.rect.center = self.hitbox_rect.center
-    
     def update(self, dt):
         """Update player every frame"""
         self.input()
         self.move(dt)
         self.animate(dt)
-
-    def collision(self, direction):
-        """Handle collision with collision sprites (fallback method)"""
-        for sprite in self.collision_sprites:
-            if sprite.rect.colliderect(self.hitbox_rect):
-                if direction == 'horizontal':
-                    # Moving right - hit left side of wall
-                    if self.direction.x > 0:
-                        self.hitbox_rect.right = sprite.rect.left
-                    # Moving left - hit right side of wall
-                    if self.direction.x < 0:
-                        self.hitbox_rect.left = sprite.rect.right
-                
-                if direction == 'vertical':
-                    # Moving down - hit top of wall
-                    if self.direction.y > 0:
-                        self.hitbox_rect.bottom = sprite.rect.top
-                    # Moving up - hit bottom of wall
-                    if self.direction.y < 0:
-                        self.hitbox_rect.top = sprite.rect.bottom
