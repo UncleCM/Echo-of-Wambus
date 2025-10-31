@@ -8,6 +8,13 @@ from prolog_interface import PrologEngine
 
 from random import randint
 import math
+from enum import Enum
+
+class GameState(Enum):
+    """Game states for win/lose conditions"""
+    PLAYING = "playing"
+    VICTORY = "victory"
+    GAME_OVER = "game_over"
 
 class Game:
     def __init__(self):
@@ -16,9 +23,11 @@ class Game:
         pygame.display.set_caption("Echo of Wumpus")
         self.clock = pygame.time.Clock()
         self.running = True
-        self.game_over = False
+        self.game_state = GameState.PLAYING
         self.debug_mode = False
-        self.game_start_time = 0
+        self.game_start_time = pygame.time.get_ticks()
+        self.game_end_time = None
+        self.death_reason = None  # Track how player died
 
         # Initialize Prolog engine
         self.prolog = PrologEngine()
@@ -145,7 +154,7 @@ class Game:
         if pygame.time.get_ticks() - self.game_start_time < 500:
             return False
         
-        if not self.game_over:
+        if self.game_state == GameState.PLAYING:
             # Use Prolog to check if player should fall
             if self.prolog.check_fall(
                 int(self.player.hitbox_rect.x),
@@ -154,7 +163,9 @@ class Game:
                 int(self.player.hitbox_rect.height),
                 10  # feet_height
             ):
-                self.game_over = True
+                self.game_state = GameState.GAME_OVER
+                self.game_end_time = pygame.time.get_ticks()
+                self.death_reason = "Fell into a pit!"
                 self.prolog.set_game_over(True)
                 print("GAME OVER - Fell into a hole! (Prolog detected)")
                 return True
@@ -174,11 +185,16 @@ class Game:
             
             # Check if Wumpus died
             if not self.wumpus.is_alive:
+                self.game_state = GameState.VICTORY
+                self.game_end_time = pygame.time.get_ticks()
                 print("VICTORY - Wumpus defeated!")
-                # TODO: Win condition handling
     
     def check_wumpus_attack(self):
         """Check if Wumpus's attack hits the Player"""
+        # Only check if game is still playing
+        if self.game_state != GameState.PLAYING:
+            return
+        
         # Calculate distance between Wumpus and Player
         player_pos = pygame.math.Vector2(self.player.hitbox_rect.center)
         wumpus_pos = pygame.math.Vector2(self.wumpus.hitbox_rect.center)
@@ -191,7 +207,9 @@ class Game:
             
             # Check if Player died
             if not self.player.is_alive:
-                self.game_over = True
+                self.game_state = GameState.GAME_OVER
+                self.game_end_time = pygame.time.get_ticks()
+                self.death_reason = "Defeated by the Wumpus!"
                 print("GAME OVER - Player defeated by Wumpus!")
 
     def draw_flashlight(self):
@@ -265,13 +283,13 @@ class Game:
                 if event.type == pygame.QUIT:
                     self.running = False
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_r and self.game_over:
-                        self.__init__()
+                    if event.key == pygame.K_r and self.game_state != GameState.PLAYING:
+                        self.restart()
                     if event.key == pygame.K_f:
                         self.debug_mode = not self.debug_mode
                         print(f"Debug mode: {self.debug_mode}")
             
-            if not self.game_over:
+            if self.game_state == GameState.PLAYING:
                 # Update Wumpus AI first (before sprite group update)
                 if self.wumpus.is_alive:
                     player_center = pygame.math.Vector2(self.player.hitbox_rect.center)
@@ -380,23 +398,103 @@ class Game:
                 offset_player.topleft -= offset
                 pygame.draw.rect(self.screen, (0, 0, 255), offset_player, 2)
             
-            font = pygame.font.Font(None, 36)
-            if self.game_over:
-                game_over_text = font.render("GAME OVER! Press R to Restart", True, (255, 0, 0))
-                text_rect = game_over_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
-                self.screen.blit(game_over_text, text_rect)
-            else:
+            # Draw game state screens
+            if self.game_state == GameState.VICTORY:
+                self.draw_victory_screen()
+            elif self.game_state == GameState.GAME_OVER:
+                self.draw_game_over_screen()
+            elif self.debug_mode:
+                # Debug info (only in PLAYING state)
+                font = pygame.font.Font(None, 36)
                 debug_text = font.render(f"Player pos: {self.player.rect.topleft} | Animation: {self.player.current_animation}", True, (255, 255, 255))
                 self.screen.blit(debug_text, (10, 10))
                 
-                if self.debug_mode:
-                    coll_count, fall_count = self.prolog.count_hazards()
-                    debug_text2 = font.render(f"Prolog: Coll={coll_count} Falls={fall_count} | Press F", True, (255, 255, 255))
-                    self.screen.blit(debug_text2, (10, 50))
+                coll_count, fall_count = self.prolog.count_hazards()
+                debug_text2 = font.render(f"Prolog: Coll={coll_count} Falls={fall_count} | Press F", True, (255, 255, 255))
+                self.screen.blit(debug_text2, (10, 50))
 
             pygame.display.update()
 
         pygame.quit()
+    
+    def draw_victory_screen(self):
+        """Draw victory screen with stats"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Calculate game stats
+        elapsed_time = (self.game_end_time - self.game_start_time) / 1000.0  # Convert to seconds
+        minutes = int(elapsed_time // 60)
+        seconds = int(elapsed_time % 60)
+        
+        # Fonts
+        title_font = pygame.font.Font(None, 96)
+        font = pygame.font.Font(None, 48)
+        small_font = pygame.font.Font(None, 36)
+        
+        # Title
+        title_text = title_font.render("VICTORY!", True, (255, 215, 0))
+        title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 150))
+        self.screen.blit(title_text, title_rect)
+        
+        # Stats
+        time_text = font.render(f"Time: {minutes:02d}:{seconds:02d}", True, (255, 255, 255))
+        time_rect = time_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50))
+        self.screen.blit(time_text, time_rect)
+        
+        health_text = font.render(f"Health Remaining: {self.player.health}/{self.player.max_health}", True, (0, 255, 0))
+        health_rect = health_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20))
+        self.screen.blit(health_text, health_rect)
+        
+        # Restart prompt
+        restart_text = small_font.render("Press R to Restart", True, (200, 200, 200))
+        restart_rect = restart_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 120))
+        self.screen.blit(restart_text, restart_rect)
+    
+    def draw_game_over_screen(self):
+        """Draw game over screen"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Calculate game stats
+        elapsed_time = (self.game_end_time - self.game_start_time) / 1000.0  # Convert to seconds
+        minutes = int(elapsed_time // 60)
+        seconds = int(elapsed_time % 60)
+        
+        # Fonts
+        title_font = pygame.font.Font(None, 96)
+        font = pygame.font.Font(None, 48)
+        small_font = pygame.font.Font(None, 36)
+        
+        # Title
+        title_text = title_font.render("GAME OVER", True, (255, 0, 0))
+        title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 150))
+        self.screen.blit(title_text, title_rect)
+        
+        # Death message
+        death_message = self.death_reason if self.death_reason else "You died!"
+        death_text = font.render(death_message, True, (255, 100, 100))
+        death_rect = death_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50))
+        self.screen.blit(death_text, death_rect)
+        
+        # Stats
+        time_text = small_font.render(f"Survived: {minutes:02d}:{seconds:02d}", True, (200, 200, 200))
+        time_rect = time_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20))
+        self.screen.blit(time_text, time_rect)
+        
+        # Restart prompt
+        restart_text = small_font.render("Press R to Restart", True, (200, 200, 200))
+        restart_rect = restart_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 120))
+        self.screen.blit(restart_text, restart_rect)
+    
+    def restart(self):
+        """Restart the game by reinitializing"""
+        print("[Game] Restarting...")
+        self.__init__()
 
 if __name__ == "__main__":
     game = Game()
