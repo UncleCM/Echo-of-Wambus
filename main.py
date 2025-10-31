@@ -31,12 +31,11 @@ class Game:
         self.setup()
         
         spawn_pos = self.find_spawn_position()
+        # Create player and give it a reference to the Prolog engine (single instance)
         self.player = Player(spawn_pos, self.all_sprites, self.collision_sprites, self.prolog)
         
-        # Update Prolog with player position
-        self.prolog.update_player_position(self.player.rect.x, self.player.rect.y)
-        # Create player and add to sprite group
-        self.player = Player(spawn_pos, self.all_sprites, self.collision_sprites)
+        # Update Prolog with player position (use hitbox for accuracy)
+        self.prolog.update_player_position(int(self.player.hitbox_rect.x), int(self.player.hitbox_rect.y))
 
         # Flashlight and darkness setup
         self.flashlight_on = True

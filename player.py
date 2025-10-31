@@ -38,6 +38,10 @@ class Player(pygame.sprite.Sprite):
         self.speed = 200
         self.facing = 'down'
         self.collision_sprites = collision_sprites
+        
+        # Fractional movement remainder (to prevent stuttering from rounding small deltas)
+        self._rem_x = 0.0
+        self._rem_y = 0.0
     
         # ... rest of the load_animations, load_sprite_strip, input, and animate methods stay the same ...
     
@@ -220,13 +224,16 @@ class Player(pygame.sprite.Sprite):
     
     def move(self, dt):
         """
-        Move the player, using Prolog for validation and collision resolution.
+        Move the player, using Prolog for authoritative collision resolution.
         The core collision logic is now in game_logic.pl.
         """
         if self.direction.length() == 0:
-            # Only update position in Prolog if it's not already correct (optional optimization)
-            if self.prolog:
-                 self.prolog.update_player_position(self.hitbox_rect.x, self.hitbox_rect.y)
+            # Keep Prolog's authoritative position in sync when idle
+            if self.prolog and getattr(self.prolog, 'available', False):
+                try:
+                    self.prolog.update_player_position(int(self.hitbox_rect.x), int(self.hitbox_rect.y))
+                except Exception:
+                    pass
             return
 
         # Calculate movement deltas
@@ -234,32 +241,45 @@ class Player(pygame.sprite.Sprite):
         delta_y = self.direction.y * self.speed * dt
         
         # =========================================================================
-        # UPDATED LOGIC: USE PROLOG FOR MOVEMENT RESOLUTION
+        # PROLOG AUTHORITATIVE MOVEMENT RESOLUTION
         # =========================================================================
-        if self.prolog:
+        if self.prolog and getattr(self.prolog, 'available', False):
             # Get current hitbox position (must be integers for Prolog)
             current_x = int(self.hitbox_rect.x)
             current_y = int(self.hitbox_rect.y)
             
-            # Ensure deltas and dimensions are integers for the Prolog call
-            int_delta_x = int(round(delta_x))
-            int_delta_y = int(round(delta_y))
+            # Accumulate fractional movement to avoid losing small deltas (prevent stutter)
+            self._rem_x += delta_x
+            self._rem_y += delta_y
+            
+            # Convert accumulated movement to integers for Prolog call
+            int_delta_x = int(round(self._rem_x))
+            int_delta_y = int(round(self._rem_y))
+            
+            # Subtract sent integer portion from remainder (keep fractional part)
+            self._rem_x -= int_delta_x
+            self._rem_y -= int_delta_y
+            
             player_w = self.hitbox_rect.width
             player_h = self.hitbox_rect.height
             
             # Prolog resolves collision and updates its internal position fact
-            resolved_x, resolved_y = self.prolog.resolve_movement(
-                current_x, current_y, 
-                int_delta_x, int_delta_y, 
-                player_w, player_h
-            )
-            
-            # Update Python's hitbox with the resolved position
-            self.hitbox_rect.x = resolved_x
-            self.hitbox_rect.y = resolved_y
+            try:
+                resolved_x, resolved_y = self.prolog.resolve_movement(
+                    current_x, current_y, 
+                    int_delta_x, int_delta_y, 
+                    player_w, player_h
+                )
+                # Update Python's hitbox with the authoritative resolved position
+                self.hitbox_rect.x = resolved_x
+                self.hitbox_rect.y = resolved_y
+            except Exception as e:
+                print(f"[Player] Prolog resolve_movement failed: {e}")
+                # On error, keep current position (don't crash the game)
+                pass
 
         else:
-            # Fallback to original collision system (if no Prolog)
+            # Fallback to original collision system (only if Prolog unavailable)
             new_x = self.hitbox_rect.x + delta_x
             new_y = self.hitbox_rect.y + delta_y
             
