@@ -1,5 +1,6 @@
 from Settings import *
 from player import Player
+from wumpus import Wumpus
 from sprites import *
 from groups import AllSprites
 from pytmx.util_pygame import load_pygame
@@ -27,12 +28,24 @@ class Game:
         self.all_sprites = AllSprites()
         self.collision_sprites = pygame.sprite.Group()
         self.fall_sprites = pygame.sprite.Group()
+        self.wumpus_sprites = pygame.sprite.Group()
 
         self.setup()
         
         spawn_pos = self.find_spawn_position()
         # Create player and give it a reference to the Prolog engine (single instance)
         self.player = Player(spawn_pos, self.all_sprites, self.collision_sprites, self.prolog)
+        
+        # Create Wumpus enemy
+        wumpus_pos = self.find_wumpus_spawn()
+        self.wumpus = Wumpus(wumpus_pos, [self.all_sprites, self.wumpus_sprites], self.collision_sprites, self.prolog)
+        # Set patrol points for Wumpus
+        self.wumpus.patrol_points = [
+            wumpus_pos,
+            (wumpus_pos[0] + 200, wumpus_pos[1]),
+            (wumpus_pos[0] + 200, wumpus_pos[1] + 200),
+            (wumpus_pos[0], wumpus_pos[1] + 200),
+        ]
         
         # Update Prolog with player position (use hitbox for accuracy)
         self.prolog.update_player_position(int(self.player.hitbox_rect.x), int(self.player.hitbox_rect.y))
@@ -71,6 +84,24 @@ class Game:
         map_center_y = (self.tmx_map.height * self.tmx_map.tileheight * self.map_scale) // 2
         print(f"No entrance found, spawning at map center: ({map_center_x}, {map_center_y})")
         return (map_center_x, map_center_y)
+    
+    def find_wumpus_spawn(self):
+        """Find spawn position for Wumpus enemy"""
+        # Look for 'WumpusSpawn' object layer in TMX
+        for layer in self.tmx_map.layers:
+            if type(layer).__name__ == 'TiledObjectGroup' and 'wumpus' in layer.name.lower():
+                if len(layer) > 0:
+                    obj = layer[0]  # Take first spawn point
+                    spawn_x = (obj.x * self.map_scale) + (obj.width * self.map_scale // 2)
+                    spawn_y = (obj.y * self.map_scale) + (obj.height * self.map_scale // 2)
+                    print(f"Found Wumpus spawn at ({spawn_x}, {spawn_y})")
+                    return (spawn_x, spawn_y)
+        
+        # Fallback: spawn Wumpus far from player (bottom-right corner)
+        fallback_x = (self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale) - 200
+        fallback_y = (self.tmx_map.height * self.tmx_map.tileheight * self.map_scale) - 200
+        print(f"No Wumpus spawn found, using fallback: ({fallback_x}, {fallback_y})")
+        return (fallback_x, fallback_y)
 
     def setup(self):
         self.tmx_map = load_pygame(join('assets', 'Map', 'test_wall_size.tmx'))
@@ -207,7 +238,14 @@ class Game:
                         print(f"Debug mode: {self.debug_mode}")
             
             if not self.game_over:
+                # Update Wumpus AI first (before sprite group update)
+                if self.wumpus.is_alive:
+                    player_center = pygame.math.Vector2(self.player.hitbox_rect.center)
+                    self.wumpus.ai_update(player_center, dt)
+                
+                # Update all sprites (Player and Wumpus movement/animation)
                 self.all_sprites.update(dt)
+                
                 # Update Prolog with current player position
                 self.prolog.update_player_position(int(self.player.rect.x), int(self.player.rect.y))
                 self.check_game_over()
@@ -234,6 +272,22 @@ class Game:
                 offset_hitbox = self.player.hitbox_rect.copy()
                 offset_hitbox.topleft -= offset
                 pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
+                
+                # Draw Wumpus hitbox and detection range
+                if self.wumpus.is_alive:
+                    wumpus_hitbox = self.wumpus.hitbox_rect.copy()
+                    wumpus_hitbox.topleft -= offset
+                    pygame.draw.rect(self.screen, (255, 0, 255), wumpus_hitbox, 2)
+                    
+                    # Detection range circle
+                    wumpus_center = self.wumpus.hitbox_rect.center
+                    screen_center = (int(wumpus_center[0] - offset.x), int(wumpus_center[1] - offset.y))
+                    pygame.draw.circle(self.screen, (255, 100, 100), screen_center, self.wumpus.detection_range, 1)
+                    
+                    # AI state text
+                    font = pygame.font.Font(None, 24)
+                    state_text = font.render(f"AI: {self.wumpus.ai_state}", True, (255, 255, 255))
+                    self.screen.blit(state_text, (screen_center[0] - 40, screen_center[1] - 100))
                 
                 feet_height = 10
                 feet_rect = pygame.Rect(
