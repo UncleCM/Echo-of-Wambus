@@ -1,6 +1,6 @@
 """
-Phase 1.5 Verification Test
-Tests that Win/Lose Conditions are working correctly
+Phase 1.5.1 Verification Test
+Tests Treasure Hunt Mechanics (Collect treasure and escape)
 """
 
 import sys
@@ -31,7 +31,7 @@ def test_game_state_enum():
     return True
 
 def test_game_initialization():
-    """Test that Game initializes with correct state"""
+    """Test that Game initializes with treasure hunt mechanics"""
     print("\n=== Testing Game Initialization ===")
     from main import Game, GameState
     import pygame
@@ -52,19 +52,43 @@ def test_game_initialization():
             pygame.quit()
             return False
         
-        # Check game_end_time is None initially
-        if game.game_end_time is not None:
-            print(f"❌ FAIL: game_end_time should be None initially: {game.game_end_time}")
+        # Check time limit (3 minutes = 180 seconds)
+        if not hasattr(game, 'time_limit') or game.time_limit != 180.0:
+            print(f"❌ FAIL: time_limit should be 180.0 seconds: {getattr(game, 'time_limit', 'MISSING')}")
             pygame.quit()
             return False
         
-        # Check death_reason is None initially
-        if game.death_reason is not None:
-            print(f"❌ FAIL: death_reason should be None initially: {game.death_reason}")
+        # Check time remaining initialized
+        if not hasattr(game, 'time_remaining') or game.time_remaining != 180.0:
+            print(f"❌ FAIL: time_remaining should be 180.0 initially: {getattr(game, 'time_remaining', 'MISSING')}")
             pygame.quit()
             return False
         
-        print("✅ PASS: Game initializes with correct state")
+        # Check treasure flags
+        if not hasattr(game, 'has_treasure') or game.has_treasure != False:
+            print(f"❌ FAIL: has_treasure should be False initially: {getattr(game, 'has_treasure', 'MISSING')}")
+            pygame.quit()
+            return False
+        
+        # Check exit flags
+        if not hasattr(game, 'exit_unlocked') or game.exit_unlocked != False:
+            print(f"❌ FAIL: exit_unlocked should be False initially: {getattr(game, 'exit_unlocked', 'MISSING')}")
+            pygame.quit()
+            return False
+        
+        # Check treasure sprites group exists
+        if not hasattr(game, 'treasure_sprites'):
+            print("❌ FAIL: treasure_sprites group missing")
+            pygame.quit()
+            return False
+        
+        # Check exit sprites group exists
+        if not hasattr(game, 'exit_sprites'):
+            print("❌ FAIL: exit_sprites group missing")
+            pygame.quit()
+            return False
+        
+        print("✅ PASS: Game initializes with treasure hunt mechanics")
         pygame.quit()
         return True
         
@@ -75,9 +99,9 @@ def test_game_initialization():
         pygame.quit()
         return False
 
-def test_victory_condition():
-    """Test that killing Wumpus triggers VICTORY state"""
-    print("\n=== Testing Victory Condition ===")
+def test_treasure_collection():
+    """Test that collecting treasure works correctly"""
+    print("\n=== Testing Treasure Collection ===")
     from main import Game, GameState
     import pygame
     
@@ -85,18 +109,72 @@ def test_victory_condition():
     try:
         game = Game()
         
-        # Kill Wumpus
-        game.wumpus.health = 1
-        game.wumpus.take_damage(100)  # Overkill
+        # Verify treasure spawned
+        if len(game.treasure_sprites) == 0:
+            print("❌ FAIL: No treasure spawned")
+            pygame.quit()
+            return False
         
-        # Manually trigger victory check (simulate check_player_attack)
-        if not game.wumpus.is_alive:
-            game.game_state = GameState.VICTORY
-            game.game_end_time = pygame.time.get_ticks()
+        # Get treasure
+        treasure = list(game.treasure_sprites)[0]
+        initial_wumpus_speed = game.wumpus.speed
+        
+        # Simulate collection
+        game.has_treasure = True
+        game.exit_unlocked = True
+        game.wumpus.speed = initial_wumpus_speed * 1.5
+        
+        # Verify has_treasure set
+        if not game.has_treasure:
+            print("❌ FAIL: has_treasure should be True after collection")
+            pygame.quit()
+            return False
+        
+        # Verify exit unlocked
+        if not game.exit_unlocked:
+            print("❌ FAIL: exit_unlocked should be True after treasure collection")
+            pygame.quit()
+            return False
+        
+        # Verify Wumpus enraged (speed increased by 50%)
+        expected_speed = initial_wumpus_speed * 1.5
+        if abs(game.wumpus.speed - expected_speed) > 0.01:
+            print(f"❌ FAIL: Wumpus speed should be {expected_speed}, got {game.wumpus.speed}")
+            pygame.quit()
+            return False
+        
+        print("✅ PASS: Treasure collection works correctly")
+        pygame.quit()
+        return True
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+        pygame.quit()
+        return False
+
+def test_new_victory_condition():
+    """Test that escaping with treasure triggers VICTORY state"""
+    print("\n=== Testing New Victory Condition ===")
+    from main import Game, GameState
+    import pygame
+    
+    pygame.init()
+    try:
+        game = Game()
+        
+        # Simulate treasure collection
+        game.has_treasure = True
+        game.exit_unlocked = True
+        
+        # Simulate reaching exit (manually trigger victory)
+        game.game_state = GameState.VICTORY
+        game.game_end_time = pygame.time.get_ticks()
         
         # Verify state changed to VICTORY
         if game.game_state != GameState.VICTORY:
-            print(f"❌ FAIL: Game state should be VICTORY after killing Wumpus, got {game.game_state}")
+            print(f"❌ FAIL: Game state should be VICTORY after escaping with treasure, got {game.game_state}")
             pygame.quit()
             return False
         
@@ -106,7 +184,7 @@ def test_victory_condition():
             pygame.quit()
             return False
         
-        print("✅ PASS: Victory condition works correctly")
+        print("✅ PASS: New victory condition works correctly")
         pygame.quit()
         return True
         
@@ -180,6 +258,7 @@ def test_game_over_by_fall():
         game.game_state = GameState.GAME_OVER
         game.game_end_time = pygame.time.get_ticks()
         game.death_reason = "Fell into a pit!"
+        game.player.is_alive = False
         
         # Verify state changed to GAME_OVER
         if game.game_state != GameState.GAME_OVER:
@@ -194,6 +273,52 @@ def test_game_over_by_fall():
             return False
         
         print("✅ PASS: Game over by fall works correctly")
+        pygame.quit()
+        return True
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+        pygame.quit()
+        return False
+
+def test_game_over_by_timeout():
+    """Test that time limit timeout triggers GAME_OVER state"""
+    print("\n=== Testing Game Over by Timeout ===")
+    from main import Game, GameState
+    import pygame
+    
+    pygame.init()
+    try:
+        game = Game()
+        
+        # Simulate timeout
+        game.time_remaining = 0
+        game.game_state = GameState.GAME_OVER
+        game.game_end_time = pygame.time.get_ticks()
+        game.death_reason = "Time's up!"
+        game.player.is_alive = False
+        
+        # Verify state changed to GAME_OVER
+        if game.game_state != GameState.GAME_OVER:
+            print(f"❌ FAIL: Game state should be GAME_OVER after timeout, got {game.game_state}")
+            pygame.quit()
+            return False
+        
+        # Verify death_reason was set correctly
+        if game.death_reason != "Time's up!":
+            print(f"❌ FAIL: death_reason should be 'Time's up!', got '{game.death_reason}'")
+            pygame.quit()
+            return False
+        
+        # Verify player marked as dead
+        if game.player.is_alive:
+            print("❌ FAIL: player.is_alive should be False after timeout")
+            pygame.quit()
+            return False
+        
+        print("✅ PASS: Game over by timeout works correctly")
         pygame.quit()
         return True
         
@@ -393,16 +518,18 @@ def test_state_prevents_updates():
 
 def main():
     print("=" * 60)
-    print("PHASE 1.5 VERIFICATION TEST")
-    print("Testing Win/Lose Conditions")
+    print("PHASE 1.5.1 VERIFICATION TEST")
+    print("Testing Treasure Hunt Mechanics")
     print("=" * 60)
     
     tests = [
         ("GameState Enum", test_game_state_enum),
         ("Game Initialization", test_game_initialization),
-        ("Victory Condition", test_victory_condition),
+        ("Treasure Collection", test_treasure_collection),
+        ("New Victory Condition", test_new_victory_condition),
         ("Game Over by Wumpus", test_game_over_by_wumpus),
         ("Game Over by Fall", test_game_over_by_fall),
+        ("Game Over by Timeout", test_game_over_by_timeout),
         ("Timer Tracking", test_timer_tracking),
         ("Restart Functionality", test_restart_functionality),
         ("Screen Methods", test_screen_methods_exist),
@@ -428,10 +555,10 @@ def main():
     print(f"Tests passed: {passed}/{total}")
     
     if passed == total:
-        print("\n✅ ALL TESTS PASSED - Phase 1.5 is complete!")
+        print("\n✅ ALL TESTS PASSED - Phase 1.5.1 is complete!")
         return 0
     else:
-        print("\n❌ SOME TESTS FAILED - Phase 1.5 needs fixes")
+        print("\n❌ SOME TESTS FAILED - Phase 1.5.1 needs fixes")
         return 1
 
 if __name__ == "__main__":

@@ -28,6 +28,12 @@ class Game:
         self.game_start_time = pygame.time.get_ticks()
         self.game_end_time = None
         self.death_reason = None  # Track how player died
+        
+        # Treasure & Exit system
+        self.has_treasure = False
+        self.exit_unlocked = False
+        self.time_limit = 180  # 3 minutes in seconds
+        self.time_remaining = self.time_limit
 
         # Initialize Prolog engine
         self.prolog = PrologEngine()
@@ -38,6 +44,8 @@ class Game:
         self.collision_sprites = pygame.sprite.Group()
         self.fall_sprites = pygame.sprite.Group()
         self.wumpus_sprites = pygame.sprite.Group()
+        self.treasure_sprites = pygame.sprite.Group()
+        self.exit_sprites = pygame.sprite.Group()
 
         self.setup()
         
@@ -58,6 +66,10 @@ class Game:
         
         # Update Prolog with player position (use hitbox for accuracy)
         self.prolog.update_player_position(int(self.player.hitbox_rect.x), int(self.player.hitbox_rect.y))
+        
+        # Spawn treasure and exit
+        self.spawn_treasure()
+        self.spawn_exit()
 
         # Flashlight and darkness setup
         self.flashlight_on = True
@@ -111,6 +123,36 @@ class Game:
         fallback_y = (self.tmx_map.height * self.tmx_map.tileheight * self.map_scale) - 200
         print(f"No Wumpus spawn found, using fallback: ({fallback_x}, {fallback_y})")
         return (fallback_x, fallback_y)
+    
+    def spawn_treasure(self):
+        """Spawn treasure collectible"""
+        from sprites import Treasure
+        
+        # Look for 'Treasure' object layer in TMX
+        for layer in self.tmx_map.layers:
+            if type(layer).__name__ == 'TiledObjectGroup' and 'treasure' in layer.name.lower():
+                if len(layer) > 0:
+                    obj = layer[0]  # Take first treasure
+                    treasure_x = (obj.x * self.map_scale) + (obj.width * self.map_scale // 2)
+                    treasure_y = (obj.y * self.map_scale) + (obj.height * self.map_scale // 2)
+                    treasure = Treasure((treasure_x, treasure_y), [self.all_sprites, self.treasure_sprites])
+                    print(f"Spawned treasure at ({treasure_x}, {treasure_y})")
+                    return
+        
+        # Fallback: spawn treasure deep in cave (opposite corner from entrance)
+        fallback_x = (self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale) - 300
+        fallback_y = (self.tmx_map.height * self.tmx_map.tileheight * self.map_scale) - 300
+        treasure = Treasure((fallback_x, fallback_y), [self.all_sprites, self.treasure_sprites])
+        print(f"No treasure spawn found, using fallback: ({fallback_x}, {fallback_y})")
+    
+    def spawn_exit(self):
+        """Spawn exit portal at entrance"""
+        from sprites import ExitPortal
+        
+        # Exit is at entrance position
+        entrance_pos = self.find_spawn_position()
+        exit_portal = ExitPortal(entrance_pos, [self.all_sprites, self.exit_sprites])
+        print(f"Spawned exit portal at entrance: {entrance_pos}")
 
     def setup(self):
         self.tmx_map = load_pygame(join('assets', 'Map', 'test_wall_size.tmx'))
@@ -171,8 +213,43 @@ class Game:
                 return True
         return False
     
+    def check_treasure_collection(self):
+        """Check if player collects treasure"""
+        if not self.has_treasure and len(self.treasure_sprites) > 0:
+            # Check collision between player and treasure
+            treasure = self.treasure_sprites.sprites()[0]
+            player_rect = self.player.hitbox_rect
+            treasure_rect = treasure.hitbox_rect
+            
+            if player_rect.colliderect(treasure_rect):
+                self.has_treasure = True
+                treasure.collect()
+                
+                # Unlock exit
+                if len(self.exit_sprites) > 0:
+                    exit_portal = self.exit_sprites.sprites()[0]
+                    exit_portal.unlock()
+                    self.exit_unlocked = True
+                
+                # Enrage Wumpus (50% speed boost)
+                self.wumpus.speed *= 1.5
+                print("[Game] Treasure collected! Wumpus is enraged! Find the exit!")
+    
+    def check_exit_reached(self):
+        """Check if player reaches unlocked exit"""
+        if self.has_treasure and self.exit_unlocked and len(self.exit_sprites) > 0:
+            # Check collision between player and exit
+            exit_portal = self.exit_sprites.sprites()[0]
+            player_rect = self.player.hitbox_rect
+            exit_rect = exit_portal.hitbox_rect
+            
+            if player_rect.colliderect(exit_rect):
+                self.game_state = GameState.VICTORY
+                self.game_end_time = pygame.time.get_ticks()
+                print("VICTORY - Escaped with the treasure!")
+    
     def check_player_attack(self):
-        """Check if player's attack hits the Wumpus"""
+        """Check if player's attack hits the Wumpus (now stuns instead of killing)"""
         # Calculate distance between player and Wumpus
         player_pos = pygame.math.Vector2(self.player.hitbox_rect.center)
         wumpus_pos = pygame.math.Vector2(self.wumpus.hitbox_rect.center)
@@ -183,11 +260,7 @@ class Game:
             damage = self.wumpus.take_damage(self.player.attack_damage)
             print(f"[Combat] Player hit Wumpus for {damage} damage! Wumpus HP: {self.wumpus.health}/{self.wumpus.max_health}")
             
-            # Check if Wumpus died
-            if not self.wumpus.is_alive:
-                self.game_state = GameState.VICTORY
-                self.game_end_time = pygame.time.get_ticks()
-                print("VICTORY - Wumpus defeated!")
+            # TODO: Implement stun mechanic instead of death
     
     def check_wumpus_attack(self):
         """Check if Wumpus's attack hits the Player"""
@@ -290,25 +363,42 @@ class Game:
                         print(f"Debug mode: {self.debug_mode}")
             
             if self.game_state == GameState.PLAYING:
-                # Update Wumpus AI first (before sprite group update)
-                if self.wumpus.is_alive:
-                    player_center = pygame.math.Vector2(self.player.hitbox_rect.center)
-                    self.wumpus.ai_update(player_center, dt)
+                # Update time remaining
+                elapsed_time = (pygame.time.get_ticks() - self.game_start_time) / 1000.0  # seconds
+                self.time_remaining = self.time_limit - elapsed_time
                 
-                # Update all sprites (Player and Wumpus movement/animation)
-                self.all_sprites.update(dt)
-                
-                # Check player attack hit Wumpus
-                if self.player.is_attacking and self.wumpus.is_alive:
-                    self.check_player_attack()
-                
-                # Check Wumpus attack hit Player
-                if self.wumpus.ai_state == 'attack' and self.player.is_alive:
-                    self.check_wumpus_attack()
-                
-                # Update Prolog with current player position
-                self.prolog.update_player_position(int(self.player.rect.x), int(self.player.rect.y))
-                self.check_game_over()
+                # Check timeout
+                if self.time_remaining <= 0:
+                    self.game_state = GameState.GAME_OVER
+                    self.game_end_time = pygame.time.get_ticks()
+                    self.death_reason = "Time's up!"
+                    self.player.is_alive = False
+                    print("GAME OVER - Time's up!")
+                else:
+                    # Only update game if time hasn't run out
+                    # Update Wumpus AI first (before sprite group update)
+                    if self.wumpus.is_alive:
+                        player_center = pygame.math.Vector2(self.player.hitbox_rect.center)
+                        self.wumpus.ai_update(player_center, dt)
+                    
+                    # Update all sprites (Player and Wumpus movement/animation)
+                    self.all_sprites.update(dt)
+                    
+                    # Check player attack hit Wumpus
+                    if self.player.is_attacking and self.wumpus.is_alive:
+                        self.check_player_attack()
+                    
+                    # Check Wumpus attack hit Player
+                    if self.wumpus.ai_state == 'attack' and self.player.is_alive:
+                        self.check_wumpus_attack()
+                    
+                    # Check treasure and exit
+                    self.check_treasure_collection()
+                    self.check_exit_reached()
+                    
+                    # Update Prolog with current player position
+                    self.prolog.update_player_position(int(self.player.rect.x), int(self.player.rect.y))
+                    self.check_game_over()
             
             self.screen.fill((30, 30, 30))
             self.all_sprites.draw(self.screen, self.player)
@@ -398,6 +488,31 @@ class Game:
                 offset_player.topleft -= offset
                 pygame.draw.rect(self.screen, (0, 0, 255), offset_player, 2)
             
+            # Draw HUD (Timer and treasure status)
+            if self.game_state == GameState.PLAYING:
+                font = pygame.font.Font(None, 36)
+                
+                # Timer (top center)
+                minutes = int(self.time_remaining // 60)
+                seconds = int(self.time_remaining % 60)
+                timer_color = (255, 255, 255) if self.time_remaining > 30 else (255, 100, 100)  # Red if <30s
+                timer_text = font.render(f"Time: {minutes:02d}:{seconds:02d}", True, timer_color)
+                timer_rect = timer_text.get_rect(center=(WINDOW_WIDTH // 2, 30))
+                self.screen.blit(timer_text, timer_rect)
+                
+                # Treasure status (top left)
+                treasure_status = "✓ Treasure" if self.has_treasure else "⬜ Treasure"
+                treasure_color = (255, 215, 0) if self.has_treasure else (150, 150, 150)
+                treasure_text = font.render(treasure_status, True, treasure_color)
+                self.screen.blit(treasure_text, (20, 20))
+                
+                # Exit status (top left, below treasure)
+                if self.has_treasure:
+                    exit_status = "🔓 Exit Unlocked!" if self.exit_unlocked else "🔒 Exit"
+                    exit_color = (0, 255, 0) if self.exit_unlocked else (150, 150, 150)
+                    exit_text = font.render(exit_status, True, exit_color)
+                    self.screen.blit(exit_text, (20, 60))
+            
             # Draw game state screens
             if self.game_state == GameState.VICTORY:
                 self.draw_victory_screen()
@@ -439,9 +554,14 @@ class Game:
         title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 150))
         self.screen.blit(title_text, title_rect)
         
+        # Success message
+        success_text = font.render("Escaped with the treasure!", True, (100, 255, 100))
+        success_rect = success_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 80))
+        self.screen.blit(success_text, success_rect)
+        
         # Stats
-        time_text = font.render(f"Time: {minutes:02d}:{seconds:02d}", True, (255, 255, 255))
-        time_rect = time_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50))
+        time_text = small_font.render(f"Escape Time: {minutes:02d}:{seconds:02d}", True, (255, 255, 255))
+        time_rect = time_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 10))
         self.screen.blit(time_text, time_rect)
         
         health_text = font.render(f"Health Remaining: {self.player.health}/{self.player.max_health}", True, (0, 255, 0))
