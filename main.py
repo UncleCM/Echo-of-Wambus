@@ -335,6 +335,7 @@ class Game:
                 self.game_end_time = pygame.time.get_ticks()
                 self.death_reason = "Fell into a pit!"
                 self.prolog.set_game_over(True)
+                self.sound_manager.stop_footstep_loop()
                 self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Fell into a hole! (Prolog detected)")
                 return True
@@ -461,6 +462,7 @@ class Game:
                 self.game_state = GameState.GAME_OVER
                 self.game_end_time = pygame.time.get_ticks()
                 self.death_reason = "Defeated by the Wumpus!"
+                self.sound_manager.stop_footstep_loop()
                 self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Player defeated by Wumpus!")
 
@@ -621,6 +623,7 @@ class Game:
                     self.game_end_time = pygame.time.get_ticks()
                     self.death_reason = "Time's up!"
                     self.player.is_alive = False
+                    self.sound_manager.stop_footstep_loop()
                     self.sound_manager.play_sound("game_over")
                     print("GAME OVER - Time's up!")
                 else:
