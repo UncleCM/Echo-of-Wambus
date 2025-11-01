@@ -10,6 +10,7 @@ from game_state import GameState
 from ui import MenuScreens, get_pixel_font
 from lighting import FlashlightSystem
 from config import GameplayConfig, MenuConfig, WorldConfig
+from fade_transition import FadeTransition
 
 from random import randint
 import math
@@ -40,6 +41,10 @@ class Game:
 
         # Initialize game variables (will be set when starting game)
         self.game_initialized = False
+
+        # Initialize fade transition system
+        self.fade = FadeTransition(fade_speed=10)
+        self.pending_state = None  # State to transition to after fade
 
         # Start menu music
         self.sound_manager.play_menu_music()
@@ -488,6 +493,48 @@ class Game:
             self.screen, player_screen_pos, player_world_pos, self.player.facing
         )
 
+    def transition_to_state(self, new_state, force_initialize=False):
+        """
+        Transition to a new game state with fade effect
+
+        Args:
+            new_state: GameState to transition to
+            force_initialize: Force game initialization even if already in PLAYING state
+        """
+        if self.fade.is_fading():
+            return  # Already transitioning
+
+        self.pending_state = new_state
+        self.force_init = force_initialize
+
+        # Start fade out, then change state when complete
+        def on_fade_complete():
+            # Change state
+            old_state = self.game_state
+            self.game_state = self.pending_state
+            self.pending_state = None
+
+            # Handle state-specific transitions
+            if self.game_state == GameState.PLAYING:
+                # Starting or restarting game - initialize
+                if (
+                    self.force_init
+                    or not self.game_initialized
+                    or old_state != GameState.PLAYING
+                ):
+                    self.initialize_game()
+                self.force_init = False
+
+            elif self.game_state == GameState.MAIN_MENU:
+                # Returning to menu
+                self.sound_manager.stop_music()
+                self.sound_manager.play_menu_music()
+
+            # Fade back in
+            self.fade.start_fade_in()
+
+        self.fade.start_fade_out(callback=on_fade_complete)
+
     def run(self):
         while self.running:
             dt = self.clock.tick(60) / 1000.0
@@ -514,9 +561,9 @@ class Game:
                         ):
                             self.sound_manager.play_sound("button")
                             if self.menu_selection == 0:  # Start Game
-                                self.initialize_game()
+                                self.transition_to_state(GameState.PLAYING)
                             elif self.menu_selection == 1:  # Controls
-                                self.game_state = GameState.CONTROLS
+                                self.transition_to_state(GameState.CONTROLS)
                             elif self.menu_selection == 2:  # Quit
                                 self.running = False
 
@@ -524,21 +571,18 @@ class Game:
                     elif self.game_state == GameState.CONTROLS:
                         if event.key == pygame.K_ESCAPE:
                             self.sound_manager.play_sound("button")
-                            self.game_state = GameState.MAIN_MENU
-                            # Restart menu music when returning to main menu
-                            self.sound_manager.play_menu_music()
+                            self.transition_to_state(GameState.MAIN_MENU)
 
                     # In-game controls
                     elif self.game_state == GameState.PLAYING:
                         if event.key == pygame.K_ESCAPE:
-                            self.game_state = GameState.MAIN_MENU
-                            # Stop in-game music and restart menu music when returning to main menu
-                            self.sound_manager.stop_music()
-                            self.sound_manager.play_menu_music()
+                            self.transition_to_state(GameState.MAIN_MENU)
                         elif event.key == pygame.K_r:
-                            # Restart the game
+                            # Restart the game with fade (force re-initialization)
                             self.sound_manager.stop_all_sounds()
-                            self.initialize_game()
+                            self.transition_to_state(
+                                GameState.PLAYING, force_initialize=True
+                            )
                         elif event.key == pygame.K_f:
                             self.debug_mode = not self.debug_mode
                             print(f"Debug mode: {self.debug_mode}")
@@ -550,13 +594,12 @@ class Game:
                         if event.key == pygame.K_r:
                             # Stop game_over sound before restarting
                             self.sound_manager.stop_all_sounds()
-                            self.initialize_game()
+                            self.transition_to_state(
+                                GameState.PLAYING, force_initialize=True
+                            )
                         elif event.key == pygame.K_ESCAPE:
                             self.sound_manager.stop_all_sounds()
-                            self.game_state = GameState.MAIN_MENU
-                            # Stop in-game music and restart menu music when returning to main menu
-                            self.sound_manager.stop_music()
-                            self.sound_manager.play_menu_music()
+                            self.transition_to_state(GameState.MAIN_MENU)
 
             # Update game logic based on state
             if self.game_state == GameState.PLAYING and self.game_initialized:
@@ -622,6 +665,9 @@ class Game:
                         int(self.player.rect.x), int(self.player.rect.y)
                     )
                     self.check_game_over()
+
+            # Update fade transition
+            self.fade.update(dt)
 
             # Rendering
             self.screen.fill((30, 30, 30))
@@ -818,6 +864,9 @@ class Game:
                     (255, 255, 255),
                 )
                 self.screen.blit(debug_text2, (10, 40))
+
+            # Render fade transition (always on top)
+            self.fade.render(self.screen)
 
             pygame.display.update()
 
