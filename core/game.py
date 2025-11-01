@@ -6,7 +6,7 @@ Uses SpawnSystem for entity spawning
 
 from Settings import *
 from player import Player
-from wumpus import Wumpus
+from enemies import Wumpus
 from sprites import *
 from groups import AllSprites
 from pytmx.util_pygame import load_pygame
@@ -291,7 +291,7 @@ class Game:
                         print("[Game] MIMIC ACTIVATED! Additional Wumpus spawned!")
                         
                         # Spawn Wumpus at mimic location
-                        from wumpus import Wumpus
+                        from enemies import Wumpus
                         mimic_pos = chest.pos
                         new_wumpus = Wumpus(
                             (mimic_pos.x, mimic_pos.y),
@@ -514,14 +514,14 @@ class Game:
                     int(player_center[0]),
                     int(player_center[1]),
                     int(wumpus.attack_range),
-                    wumpus.ai_state
+                    wumpus.ai.state
                 )
             else:
                 # Fallback: Distance check
                 wumpus_pos = pygame.math.Vector2(wumpus_center)
                 player_pos = pygame.math.Vector2(player_center)
                 distance = player_pos.distance_to(wumpus_pos)
-                can_attack = distance <= wumpus.attack_range and wumpus.ai_state == "attack"
+                can_attack = distance <= wumpus.attack_range and wumpus.ai.state == "attack"
 
             if can_attack:
                 damage = self.player.take_damage(wumpus.damage)
@@ -692,7 +692,7 @@ class Game:
                             wumpus.ai_update(player_center, dt)
 
                         # Check if Wumpus entered chase mode (dynamic music switch)
-                        is_chasing = self.wumpus.ai_state in ["chase", "attack"]
+                        is_chasing = self.wumpus.ai.state in ["chase", "attack"]
                         if is_chasing and not self.wumpus_was_chasing:
                             # Just entered chase mode - switch to chase music
                             self.sound_manager.play_chase_music()
@@ -789,19 +789,19 @@ class Game:
                         )
                         
                         # Draw hearing radius (changes color when roaring)
-                        hearing_color = (255, 50, 50) if wumpus.is_roaring else (100, 100, 255)
+                        hearing_color = (255, 50, 50) if wumpus.ai.is_roaring else (100, 100, 255)
                         pygame.draw.circle(
                             self.screen,
                             hearing_color,
                             screen_center,
-                            wumpus.current_hearing_radius,
+                            wumpus.ai.current_hearing_radius,
                             2,
                         )
 
                         # AI state text
                         font = get_pixel_font(24)
                         state_text = font.render(
-                            f"W{idx+1} AI: {wumpus.ai_state.name if hasattr(wumpus.ai_state, 'name') else wumpus.ai_state}",
+                            f"W{idx+1} AI: {wumpus.ai.state}",
                             True,
                             (255, 255, 255)
                         )

@@ -5,7 +5,7 @@ Separates spawn logic from main game loop for better organization
 
 from Settings import *
 from sprites import TreasureChest, ExitPortal, ArrowPickup, RockPickup
-from wumpus import Wumpus
+from enemies import Wumpus
 import random
 
 
