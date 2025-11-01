@@ -5,7 +5,7 @@ from entity import Entity
 class Player(Entity):
     """Player character - controlled by user input"""
 
-    def __init__(self, pos, groups, collision_sprites, prolog_engine=None):
+    def __init__(self, pos, groups, collision_sprites, prolog_engine=None, sound_manager=None):
         # Initialize base Entity
         super().__init__(
             pos, groups, collision_sprites, prolog_engine, entity_type="player"
@@ -13,6 +13,10 @@ class Player(Entity):
 
         # Player-specific attributes
         self.speed = 200  # Player movement speed
+
+        # Sound manager reference
+        self.sound_manager = sound_manager
+        self.is_walking = False  # Track if player is currently walking
 
         # Arrow combat system
         self.arrows = STARTING_ARROWS  # Current arrow count
@@ -279,6 +283,23 @@ class Player(Entity):
         self.input()
         self.move(dt)
         self.animate(dt)
+
+        # Handle footstep sounds
+        if self.sound_manager:
+            # Check if player is moving
+            is_currently_walking = self.direction.magnitude() > 0 and self.is_alive
+            
+            if is_currently_walking:
+                # Player is walking - start looping footstep sound
+                if not self.is_walking:
+                    # Just started walking
+                    self.is_walking = True
+                    self.sound_manager.play_footstep_loop(0.3)
+            else:
+                # Player stopped walking - stop footstep sound
+                if self.is_walking:
+                    self.is_walking = False
+                    self.sound_manager.stop_footstep_loop()
 
         # Check if attack animation finished
         if self.is_attacking:

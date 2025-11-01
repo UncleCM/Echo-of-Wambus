@@ -5,6 +5,7 @@ from sprites import *
 from groups import AllSprites
 from pytmx.util_pygame import load_pygame
 from prolog_interface import PrologEngine
+from sound_manager import SoundManager
 
 from random import randint
 import math
@@ -51,6 +52,9 @@ class Game:
         self.game_end_time = None
         self.death_reason = None  # Track how player died
 
+        # Initialize sound manager
+        self.sound_manager = SoundManager()
+
         # Main menu state
         self.menu_selection = 0  # 0 = Start, 1 = Controls, 2 = Quit
         self.menu_options = ["START GAME", "CONTROLS", "QUIT"]
@@ -86,7 +90,7 @@ class Game:
         spawn_pos = self.find_spawn_position()
         # Create player and give it a reference to the Prolog engine (single instance)
         self.player = Player(
-            spawn_pos, self.all_sprites, self.collision_sprites, self.prolog
+            spawn_pos, self.all_sprites, self.collision_sprites, self.prolog, self.sound_manager
         )
 
         # Create Wumpus enemy
@@ -350,6 +354,7 @@ class Game:
                 self.game_end_time = pygame.time.get_ticks()
                 self.death_reason = "Fell into a pit!"
                 self.prolog.set_game_over(True)
+                self.sound_manager.play_sound('game_over')
                 print("GAME OVER - Fell into a hole! (Prolog detected)")
                 return True
         return False
@@ -475,6 +480,7 @@ class Game:
                 self.game_state = GameState.GAME_OVER
                 self.game_end_time = pygame.time.get_ticks()
                 self.death_reason = "Defeated by the Wumpus!"
+                self.sound_manager.play_sound('game_over')
                 print("GAME OVER - Player defeated by Wumpus!")
 
     def draw_flashlight(self):
@@ -577,16 +583,19 @@ class Game:
                     # Main Menu controls
                     if self.game_state == GameState.MAIN_MENU:
                         if event.key == pygame.K_UP:
+                            self.sound_manager.play_sound('button', 0.3)
                             self.menu_selection = (self.menu_selection - 1) % len(
                                 self.menu_options
                             )
                         elif event.key == pygame.K_DOWN:
+                            self.sound_manager.play_sound('button', 0.3)
                             self.menu_selection = (self.menu_selection + 1) % len(
                                 self.menu_options
                             )
                         elif (
                             event.key == pygame.K_RETURN or event.key == pygame.K_SPACE
                         ):
+                            self.sound_manager.play_sound('button')
                             if self.menu_selection == 0:  # Start Game
                                 self.initialize_game()
                             elif self.menu_selection == 1:  # Controls
@@ -597,6 +606,7 @@ class Game:
                     # Controls screen
                     elif self.game_state == GameState.CONTROLS:
                         if event.key == pygame.K_ESCAPE:
+                            self.sound_manager.play_sound('button')
                             self.game_state = GameState.MAIN_MENU
 
                     # In-game controls
@@ -630,6 +640,7 @@ class Game:
                     self.game_end_time = pygame.time.get_ticks()
                     self.death_reason = "Time's up!"
                     self.player.is_alive = False
+                    self.sound_manager.play_sound('game_over')
                     print("GAME OVER - Time's up!")
                 else:
                     # Only update game if time hasn't run out
