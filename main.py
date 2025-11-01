@@ -104,6 +104,7 @@ class Game:
             [self.all_sprites, self.wumpus_sprites],
             self.collision_sprites,
             self.prolog,
+            self.map_knowledge,
             self.sound_manager,
         )
         # Set patrol points for Wumpus
