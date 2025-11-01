@@ -105,9 +105,12 @@ class AudioConfig:
     SOUND_BUTTON = "button.wav"
     SOUND_FOOTSTEP = "footstep.wav"
     SOUND_GAME_OVER = "game_over.wav"
-    
+    SOUND_ROAR = "Roar_Sound_Effect.mp3"
+
     # Music file names
     MUSIC_MENU = "Game_Background_Music.mp3"
+    MUSIC_IN_GAME = "InGameMusic.mp3"
+    MUSIC_CHASE = "Chase_Scene_Music.mp3"
 
 
 # =============================================================================
