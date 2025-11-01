@@ -8,6 +8,8 @@ from prolog_interface import PrologEngine
 from sound_manager import SoundManager
 from game_state import GameState
 from ui import MenuScreens, get_pixel_font
+from lighting import FlashlightSystem
+from config import GameplayConfig, MenuConfig, WorldConfig
 
 from random import randint
 import math
@@ -34,7 +36,7 @@ class Game:
 
         # Main menu state
         self.menu_selection = 0  # 0 = Start, 1 = Controls, 2 = Quit
-        self.menu_options = ["START GAME", "CONTROLS", "QUIT"]
+        self.menu_options = MenuConfig.MENU_OPTIONS
 
         # Initialize game variables (will be set when starting game)
         self.game_initialized = False
@@ -44,7 +46,7 @@ class Game:
         # Treasure & Exit system
         self.has_treasure = False
         self.exit_unlocked = False
-        self.time_limit = 180  # 3 minutes in seconds
+        self.time_limit = GameplayConfig.TIME_LIMIT
         self.time_remaining = self.time_limit
 
         # Initialize Prolog engine (only once)
@@ -100,11 +102,8 @@ class Game:
         self.spawn_exit()
         self.spawn_arrow_pickups()
 
-        # Flashlight and darkness setup
-        self.flashlight_on = True
-        self.dark_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-        self.dark_surface.fill((0, 0, 0))
-        self.dark_surface.set_alpha(6000)  # adjust transparency for darkness
+        # Initialize lighting system
+        self.lighting_system = FlashlightSystem(self.collision_sprites)
 
         print(f"\n=== PROLOG GAME STATE ===")
         coll_count, fall_count = self.prolog.count_hazards()
@@ -319,7 +318,7 @@ class Game:
 
     def check_game_over(self):
         """Check if player fell into a fall zone using Prolog"""
-        if pygame.time.get_ticks() - self.game_start_time < 500:
+        if pygame.time.get_ticks() - self.game_start_time < GameplayConfig.SPAWN_PROTECTION_MS:
             return False
 
         if self.game_state == GameState.PLAYING:
@@ -466,125 +465,17 @@ class Game:
                 self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Player defeated by Wumpus!")
 
-    def cast_ray_to_wall(self, start_world_pos, angle_degrees, max_distance):
-        """Cast a ray from start position and find distance to nearest wall.
-        
-        Args:
-            start_world_pos: (x, y) tuple in world coordinates
-            angle_degrees: angle in degrees (0 = right, 90 = down in pygame coords)
-            max_distance: maximum distance to check
-            
-        Returns:
-            distance to wall, or max_distance if no wall hit
-        """
-        # Convert angle to radians
-        angle_rad = math.radians(angle_degrees)
-        dx = math.cos(angle_rad)
-        dy = math.sin(angle_rad)
-        
-        # Check along the ray in steps
-        step_size = 8
-        steps = int(max_distance / step_size)
-        
-        for step in range(1, steps + 1):
-            distance = step * step_size
-            check_x = start_world_pos[0] + dx * distance
-            check_y = start_world_pos[1] + dy * distance
-            
-            # Create a small rect to check collision
-            check_rect = pygame.Rect(check_x - 3, check_y - 3, 6, 6)
-            
-            # Check against all walls
-            for wall in self.collision_sprites:
-                if check_rect.colliderect(wall.rect):
-                    return distance
-        
-        return max_distance
-
-    def draw_flashlight(self):
-        """Draw a directional flashlight beam with wall occlusion based on player facing direction."""
-        darkness = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        darkness.fill((0, 0, 0, 240))  # darkness alpha 240–255 for cave
-
-        beam_length = 450
-        beam_angle = 50  # cone width in degrees
+    def render_lighting(self):
+        """Render the lighting system (flashlight and darkness)."""
         player_screen_pos = self.player.rect.center - self.all_sprites.offset
         player_world_pos = self.player.rect.center
-        px, py = player_screen_pos
-
-        # --- Get base rotation angle based on facing direction ---
-        facing = self.player.facing
-        base_angle = 0
-
-        # Map all 8 directions to angles (0° = right, 90° = down, 180° = left, 270° = up)
-        if facing == "right":
-            base_angle = 0
-        elif facing == "right_down":
-            base_angle = 45
-        elif facing == "down":
-            base_angle = 90
-        elif facing == "left_down":
-            base_angle = 135
-        elif facing == "left":
-            base_angle = 180
-        elif facing == "left_up":
-            base_angle = 225
-        elif facing == "up":
-            base_angle = 270
-        elif facing == "right_up":
-            base_angle = 315
-        else:
-            base_angle = 0  # Default to right
-
-        # --- Cast rays to create light polygon with wall occlusion ---
-        num_rays = 50  # Number of rays in the cone
-        light_points = [player_screen_pos]  # Start with player position
         
-        for i in range(num_rays + 1):
-            # Calculate angle for this ray within the cone
-            angle_ratio = i / num_rays  # 0.0 to 1.0
-            angle_offset = (angle_ratio - 0.5) * beam_angle  # -25 to +25 degrees
-            ray_angle = base_angle + angle_offset
-            
-            # Cast ray to find wall distance (in world coordinates)
-            distance = self.cast_ray_to_wall(player_world_pos, ray_angle, beam_length)
-            
-            # Convert to screen coordinates
-            angle_rad = math.radians(ray_angle)
-            end_x = px + math.cos(angle_rad) * distance
-            end_y = py + math.sin(angle_rad) * distance
-            light_points.append((end_x, end_y))
-        
-        # --- Draw the light cone polygon ---
-        if len(light_points) > 2:
-            # Create a surface for the light
-            light_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-            pygame.draw.polygon(light_surface, (255, 255, 200, 220), light_points, 0)
-            
-            # Subtract light from darkness
-            darkness.blit(light_surface, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
-
-        # --- Add subtle player glow (small, dim circle) ---
-        glow_radius = 60
-        glow_surface = pygame.Surface(
-            (glow_radius * 2, glow_radius * 2), pygame.SRCALPHA
+        self.lighting_system.render(
+            self.screen,
+            player_screen_pos,
+            player_world_pos,
+            self.player.facing
         )
-        for r in range(glow_radius, 0, -4):
-            alpha = max(0, 180 - (r / glow_radius) * 180)
-            pygame.draw.circle(
-                glow_surface,
-                (255, 255, 200, int(alpha / 2)),
-                (glow_radius, glow_radius),
-                r,
-            )
-        darkness.blit(
-            glow_surface,
-            (px - glow_radius, py - glow_radius),
-            special_flags=pygame.BLEND_RGBA_SUB,
-        )
-
-        # --- Draw final result ---
-        self.screen.blit(darkness, (0, 0))
 
     def run(self):
         while self.running:
@@ -706,7 +597,7 @@ class Game:
             elif self.game_state == GameState.PLAYING and self.game_initialized:
                 # Draw game world
                 self.all_sprites.draw(self.screen, self.player)
-                self.draw_flashlight()
+                self.render_lighting()
 
                 # Debug visualization (with camera offset) - only in PLAYING state
                 if self.debug_mode and self.game_initialized:
