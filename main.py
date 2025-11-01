@@ -7,18 +7,14 @@ from pytmx.util_pygame import load_pygame
 from prolog_interface import PrologEngine
 from sound_system import SoundManager
 from map_knowledge import MapKnowledge
+from sound_manager import SoundManager
+from game_state import GameState
+from ui import MenuScreens, get_pixel_font
+from lighting import FlashlightSystem
+from config import GameplayConfig, MenuConfig, WorldConfig
 
 from random import randint
 import math
-from enum import Enum
-
-
-class GameState(Enum):
-    """Game states for win/lose conditions"""
-
-    PLAYING = "playing"
-    VICTORY = "victory"
-    GAME_OVER = "game_over"
 
 
 class Game:
@@ -28,21 +24,43 @@ class Game:
         pygame.display.set_caption("Echo of Wumpus")
         self.clock = pygame.time.Clock()
         self.running = True
-        self.game_state = GameState.PLAYING
+        self.game_state = GameState.MAIN_MENU  # Start at main menu
         self.debug_mode = False
-        self.game_start_time = pygame.time.get_ticks()
+        self.game_start_time = None
         self.game_end_time = None
         self.death_reason = None  # Track how player died
 
+        # Initialize sound manager
+        self.sound_manager = SoundManager()
+
+        # Initialize UI/Menu screens
+        self.menu_screens = MenuScreens(self.screen)
+
+        # Main menu state
+        self.menu_selection = 0  # 0 = Start, 1 = Controls, 2 = Quit
+        self.menu_options = MenuConfig.MENU_OPTIONS
+
+        # Initialize game variables (will be set when starting game)
+        self.game_initialized = False
+        
+        # Start menu music
+        self.sound_manager.play_menu_music()
+
+    def initialize_game(self):
+        """Initialize/reset the game (called when starting a new game)"""
+        # Stop menu music when game starts
+        self.sound_manager.stop_music()
+        
         # Treasure & Exit system
         self.has_treasure = False
         self.exit_unlocked = False
-        self.time_limit = 180  # 3 minutes in seconds
+        self.time_limit = GameplayConfig.TIME_LIMIT
         self.time_remaining = self.time_limit
 
-        # Initialize Prolog engine
-        self.prolog = PrologEngine()
-        print("✓ Prolog engine initialized")
+        # Initialize Prolog engine (only once)
+        if not hasattr(self, "prolog"):
+            self.prolog = PrologEngine()
+            print("✓ Prolog engine initialized")
 
         # Create sprite groups
         self.all_sprites = AllSprites()
@@ -71,7 +89,17 @@ class Game:
         spawn_pos = self.find_spawn_position()
         # Create player and give it a reference to the Prolog engine (single instance)
         self.player = Player(
-            spawn_pos, self.all_sprites, self.collision_sprites, self.prolog
+            spawn_pos, self.all_sprites, self.collision_sprites, self.prolog, self.sound_manager
+        )
+
+        # Create Wumpus enemy
+        wumpus_pos = self.find_wumpus_spawn()
+        self.wumpus = Wumpus(
+            wumpus_pos,
+            [self.all_sprites, self.wumpus_sprites],
+            self.collision_sprites,
+            self.prolog,
+            self.sound_manager,
         )
 
         # Create multiple Wumpus enemies (3-4 ตัว)
@@ -86,10 +114,13 @@ class Game:
         self.spawn_treasure()
         self.spawn_exit()
         self.spawn_arrow_pickups()
-        self.spawn_rock_pickups()  # NEW: spawn rocks for distraction
+        self.spawn_rock_pickups()  # NEW: spawn rocks for distraction 
+
+        # Initialize lighting system
+        self.lighting_system = FlashlightSystem(self.collision_sprites)
 
         # Flashlight and darkness setup
-        self.flashlight_on = True
+        self.flashlight_on = True 
         self.dark_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.dark_surface.fill((0, 0, 0))
         self.dark_surface.set_alpha(6000)  # adjust transparency for darkness
@@ -104,6 +135,8 @@ class Game:
         )
 
         self.game_start_time = pygame.time.get_ticks()
+        self.game_state = GameState.PLAYING
+        self.game_initialized = True
 
     def find_spawn_position(self):
         """Find a safe spawn position for the player"""
@@ -379,7 +412,10 @@ class Game:
 
     def check_game_over(self):
         """Check if player fell into a fall zone using Prolog"""
-        if pygame.time.get_ticks() - self.game_start_time < 500:
+        if (
+            pygame.time.get_ticks() - self.game_start_time
+            < GameplayConfig.SPAWN_PROTECTION_MS
+        ):
             return False
 
         if self.game_state == GameState.PLAYING:
@@ -395,6 +431,8 @@ class Game:
                 self.game_end_time = pygame.time.get_ticks()
                 self.death_reason = "Fell into a pit!"
                 self.prolog.set_game_over(True)
+                self.sound_manager.stop_footstep_loop()
+                self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Fell into a hole! (Prolog detected)")
                 return True
         return False
@@ -556,96 +594,19 @@ class Game:
                     self.game_state = GameState.GAME_OVER
                     self.game_end_time = pygame.time.get_ticks()
                     self.death_reason = "Defeated by the Wumpus!"
-                    print("GAME OVER - Player defeated by Wumpus!")
+                    self.sound_manager.stop_footstep_loop()
+                self.sound_manager.play_sound("game_over")
+                print("GAME OVER - Player defeated by Wumpus!")
                     return  # Exit after death
 
-    def draw_flashlight(self):
-        """Draw a directional flashlight beam based on player facing direction."""
-        darkness = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        darkness.fill((0, 0, 0, 240))  # darkness alpha 240–255 for cave
-
-        beam_length = 450
-        beam_angle = 50  # cone width
-        light_color = (255, 255, 200)
+    def render_lighting(self):
+        """Render the lighting system (flashlight and darkness)."""
         player_screen_pos = self.player.rect.center - self.all_sprites.offset
-        px, py = player_screen_pos
+        player_world_pos = self.player.rect.center
 
-        # --- Create cone beam surface ---
-        beam_surface = pygame.Surface(
-            (beam_length * 2, beam_length * 2), pygame.SRCALPHA
+        self.lighting_system.render(
+            self.screen, player_screen_pos, player_world_pos, self.player.facing
         )
-        cx, cy = beam_length, beam_length
-
-        # Draw cone shape filled with light color
-        cone_points = [(cx, cy)]
-        for a in range(-beam_angle // 2, beam_angle // 2 + 1, 1):
-            rad = math.radians(a)
-            x = cx + math.cos(rad) * beam_length
-            y = cy + math.sin(rad) * beam_length
-            cone_points.append((x, y))
-        pygame.draw.polygon(beam_surface, (255, 255, 200, 220), cone_points)
-
-        # --- Add directional gradient inside the cone (fades outward) ---
-        gradient = pygame.Surface((beam_length * 2, beam_length * 2), pygame.SRCALPHA)
-        for i in range(beam_length):
-            alpha = int(255 * (1 - (i / beam_length)))
-            pygame.draw.line(
-                gradient, (255, 255, 180, alpha // 3), (cx, cy), (cx + i, cy), 3
-            )
-        beam_surface.blit(gradient, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
-
-        # --- Rotate cone based on facing direction (supports 8 directions) ---
-        facing = self.player.facing
-        rotation = 0
-
-        # Map all 8 directions to rotation angles
-        # 0° = right, 90° = up, 180° = left, 270° = down
-        if facing == "right":
-            rotation = 0
-        elif facing == "right_up":
-            rotation = 45
-        elif facing == "up":
-            rotation = 90
-        elif facing == "left_up":
-            rotation = 135
-        elif facing == "left":
-            rotation = 180
-        elif facing == "left_down":
-            rotation = 225
-        elif facing == "down":
-            rotation = 270
-        elif facing == "right_down":
-            rotation = 315
-        else:
-            rotation = 0  # Default to right if unknown
-
-        rotated_beam = pygame.transform.rotate(beam_surface, rotation)
-        beam_rect = rotated_beam.get_rect(center=(px, py))
-
-        # --- Subtract light cone from darkness ---
-        darkness.blit(rotated_beam, beam_rect, special_flags=pygame.BLEND_RGBA_SUB)
-
-        # --- Add subtle player glow (small, dim circle) ---
-        glow_radius = 60
-        glow_surface = pygame.Surface(
-            (glow_radius * 2, glow_radius * 2), pygame.SRCALPHA
-        )
-        for r in range(glow_radius, 0, -4):
-            alpha = max(0, 180 - (r / glow_radius) * 180)
-            pygame.draw.circle(
-                glow_surface,
-                (255, 255, 200, int(alpha / 2)),
-                (glow_radius, glow_radius),
-                r,
-            )
-        darkness.blit(
-            glow_surface,
-            (px - glow_radius, py - glow_radius),
-            special_flags=pygame.BLEND_RGBA_SUB,
-        )
-
-        # --- Draw final result ---
-        self.screen.blit(darkness, (0, 0))
 
     def run(self):
         while self.running:
@@ -654,19 +615,54 @@ class Game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_r and self.game_state != GameState.PLAYING:
-                        self.restart()
-                    if event.key == pygame.K_f:
-                        self.debug_mode = not self.debug_mode
-                        print(f"Debug mode: {self.debug_mode}")
 
-                    # Arrow shooting (Space key)
-                    if (
-                        event.key == pygame.K_SPACE
-                        and self.game_state == GameState.PLAYING
-                    ):
-                        self.handle_arrow_shooting()
+                if event.type == pygame.KEYDOWN:
+                    # Main Menu controls
+                    if self.game_state == GameState.MAIN_MENU:
+                        if event.key == pygame.K_UP:
+                            self.sound_manager.play_sound("button", 0.3)
+                            self.menu_selection = (self.menu_selection - 1) % len(
+                                self.menu_options
+                            )
+                        elif event.key == pygame.K_DOWN:
+                            self.sound_manager.play_sound("button", 0.3)
+                            self.menu_selection = (self.menu_selection + 1) % len(
+                                self.menu_options
+                            )
+                        elif (
+                            event.key == pygame.K_RETURN or event.key == pygame.K_SPACE
+                        ):
+                            self.sound_manager.play_sound("button")
+                            if self.menu_selection == 0:  # Start Game
+                                self.initialize_game()
+                            elif self.menu_selection == 1:  # Controls
+                                self.game_state = GameState.CONTROLS
+                            elif self.menu_selection == 2:  # Quit
+                                self.running = False
+
+                    # Controls screen
+                    elif self.game_state == GameState.CONTROLS:
+                        if event.key == pygame.K_ESCAPE:
+                            self.sound_manager.play_sound("button")
+                            self.game_state = GameState.MAIN_MENU
+                            # Restart menu music when returning to main menu
+                            self.sound_manager.play_menu_music()
+
+                    # In-game controls
+                    elif self.game_state == GameState.PLAYING:
+                        if event.key == pygame.K_ESCAPE:
+                            self.game_state = GameState.MAIN_MENU
+                            # Restart menu music when returning to main menu
+                            self.sound_manager.play_menu_music()
+                        elif event.key == pygame.K_r:
+                            # Restart the game
+                            self.sound_manager.stop_all_sounds()
+                            self.initialize_game()
+                        elif event.key == pygame.K_f:
+                            self.debug_mode = not self.debug_mode
+                            print(f"Debug mode: {self.debug_mode}")
+                        elif event.key == pygame.K_SPACE:
+                            self.handle_arrow_shooting()
                     
                     # Rock throwing (E key - keyboard only!)
                     if (
@@ -675,7 +671,20 @@ class Game:
                     ):
                         self.handle_rock_throw()
 
-            if self.game_state == GameState.PLAYING:
+                    # Game over / Victory screens
+                    else:
+                        if event.key == pygame.K_r:
+                            # Stop game_over sound before restarting
+                            self.sound_manager.stop_all_sounds()
+                            self.initialize_game()
+                        elif event.key == pygame.K_ESCAPE:
+                            self.sound_manager.stop_all_sounds()
+                            self.game_state = GameState.MAIN_MENU
+                            # Restart menu music when returning to main menu
+                            self.sound_manager.play_menu_music()
+
+            # Update game logic based on state
+            if self.game_state == GameState.PLAYING and self.game_initialized:
                 # Update time remaining
                 elapsed_time = (
                     pygame.time.get_ticks() - self.game_start_time
@@ -688,6 +697,8 @@ class Game:
                     self.game_end_time = pygame.time.get_ticks()
                     self.death_reason = "Time's up!"
                     self.player.is_alive = False
+                    self.sound_manager.stop_footstep_loop()
+                    self.sound_manager.play_sound("game_over")
                     print("GAME OVER - Time's up!")
                 else:
                     # Only update game if time hasn't run out
@@ -732,69 +743,110 @@ class Game:
                     )
                     self.check_game_over()
 
+            # Rendering
             self.screen.fill((30, 30, 30))
-            self.all_sprites.draw(self.screen, self.player)
 
-            self.draw_flashlight()
+            # Draw based on game state
+            if self.game_state == GameState.MAIN_MENU:
+                self.draw_main_menu()
 
-            # Debug visualization (with camera offset)
-            if self.debug_mode:
-                offset = self.all_sprites.offset
+            elif self.game_state == GameState.CONTROLS:
+                self.draw_controls_screen()
 
-                for sprite in self.collision_sprites:
-                    offset_rect = sprite.rect.copy()
-                    offset_rect.topleft -= offset
-                    pygame.draw.rect(self.screen, (255, 0, 0), offset_rect, 2)
+            elif self.game_state == GameState.PLAYING and self.game_initialized:
+                # Draw game world
+                self.all_sprites.draw(self.screen, self.player)
+                self.render_lighting()
 
-                for sprite in self.fall_sprites:
-                    offset_rect = sprite.rect.copy()
-                    offset_rect.topleft -= offset
-                    pygame.draw.rect(self.screen, (255, 255, 0), offset_rect, 2)
+                # Debug visualization (with camera offset) - only in PLAYING state
+                if self.debug_mode and self.game_initialized:
+                    offset = self.all_sprites.offset
 
-                offset_hitbox = self.player.hitbox_rect.copy()
-                offset_hitbox.topleft -= offset
-                pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
+                    for sprite in self.collision_sprites:
+                        offset_rect = sprite.rect.copy()
+                        offset_rect.topleft -= offset
+                        pygame.draw.rect(self.screen, (255, 0, 0), offset_rect, 2)
 
-                # Draw Wumpus hitbox and detection range
-                if self.wumpus.is_alive:
-                    wumpus_hitbox = self.wumpus.hitbox_rect.copy()
-                    wumpus_hitbox.topleft -= offset
-                    pygame.draw.rect(self.screen, (255, 0, 255), wumpus_hitbox, 2)
+                    for sprite in self.fall_sprites:
+                        offset_rect = sprite.rect.copy()
+                        offset_rect.topleft -= offset
+                        pygame.draw.rect(self.screen, (255, 255, 0), offset_rect, 2)
 
-                    # Hearing range circle (sound-based detection)
-                    wumpus_center = self.wumpus.hitbox_rect.center
-                    screen_center = (
-                        int(wumpus_center[0] - offset.x),
-                        int(wumpus_center[1] - offset.y),
-                    )
-                    
+                    offset_hitbox = self.player.hitbox_rect.copy()
+                    offset_hitbox.topleft -= offset
+                    pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
+
+                    # Draw Wumpus hitbox and detection range
+                    if self.wumpus.is_alive:
+                        wumpus_hitbox = self.wumpus.hitbox_rect.copy()
+                        wumpus_hitbox.topleft -= offset
+                        pygame.draw.rect(self.screen, (255, 0, 255), wumpus_hitbox, 2)
+
+                        # Hearing range circle (sound-based detection)
+                        wumpus_center = self.wumpus.hitbox_rect.center
+                        screen_center = (
+                            int(wumpus_center[0] - offset.x),
+                            int(wumpus_center[1] - offset.y),
+                        )
+                        
                     # Draw hearing radius (changes color when roaring)
                     hearing_color = (255, 50, 50) if self.wumpus.is_roaring else (100, 100, 255)
                     pygame.draw.circle(
-                        self.screen,
-                        hearing_color,
-                        screen_center,
-                        self.wumpus.current_hearing_radius,
-                        2,
-                    )
+                            self.screen,
+                            hearing_color,
+                            screen_center,
+                            self.wumpus.current_hearing_radius,
+                            2,
+                        )
 
-                    # AI state text
-                    font = pygame.font.Font(None, 24)
-                    state_text = font.render(
-                        f"AI: {self.wumpus.ai_state.name if hasattr(self.wumpus.ai_state, 'name') else self.wumpus.ai_state}", 
+                        # AI state text
+                        font = get_pixel_font(24)
+                        state_text = font.render(
+                            f"AI: {self.wumpus.ai_state.name if hasattr(self.wumpus.ai_state, 'name') else self.wumpus.ai_state}", 
                         True, 
                         (255, 255, 255)
-                    )
-                    self.screen.blit(
-                        state_text, (screen_center[0] - 40, screen_center[1] - 100)
-                    )
+                        )
+                        self.screen.blit(
+                            state_text, (screen_center[0] - 40, screen_center[1] - 100)
+                        )
 
-                    # Wumpus health bar
-                    health_percent = self.wumpus.health / self.wumpus.max_health
+                        # Wumpus health bar
+                        health_percent = self.wumpus.health / self.wumpus.max_health
+                        bar_width = 100
+                        bar_height = 10
+                        bar_x = screen_center[0] - bar_width // 2
+                        bar_y = screen_center[1] - 120
+                        # Background (red)
+                        pygame.draw.rect(
+                            self.screen,
+                            (100, 0, 0),
+                            (bar_x, bar_y, bar_width, bar_height),
+                        )
+                        # Health (green)
+                        pygame.draw.rect(
+                            self.screen,
+                            (0, 255, 0),
+                            (bar_x, bar_y, int(bar_width * health_percent), bar_height),
+                        )
+                        # Border
+                        pygame.draw.rect(
+                            self.screen,
+                            (255, 255, 255),
+                            (bar_x, bar_y, bar_width, bar_height),
+                            1,
+                        )
+
+                    # Player health bar
+                    player_center = self.player.hitbox_rect.center
+                    screen_center = (
+                        int(player_center[0] - offset.x),
+                        int(player_center[1] - offset.y),
+                    )
+                    health_percent = self.player.health / self.player.max_health
                     bar_width = 100
                     bar_height = 10
                     bar_x = screen_center[0] - bar_width // 2
-                    bar_y = screen_center[1] - 120
+                    bar_y = screen_center[1] - 80
                     # Background (red)
                     pygame.draw.rect(
                         self.screen, (100, 0, 0), (bar_x, bar_y, bar_width, bar_height)
@@ -813,53 +865,23 @@ class Game:
                         1,
                     )
 
-                # Player health bar
-                player_center = self.player.hitbox_rect.center
-                screen_center = (
-                    int(player_center[0] - offset.x),
-                    int(player_center[1] - offset.y),
-                )
-                health_percent = self.player.health / self.player.max_health
-                bar_width = 100
-                bar_height = 10
-                bar_x = screen_center[0] - bar_width // 2
-                bar_y = screen_center[1] - 80
-                # Background (red)
-                pygame.draw.rect(
-                    self.screen, (100, 0, 0), (bar_x, bar_y, bar_width, bar_height)
-                )
-                # Health (green)
-                pygame.draw.rect(
-                    self.screen,
-                    (0, 255, 0),
-                    (bar_x, bar_y, int(bar_width * health_percent), bar_height),
-                )
-                # Border
-                pygame.draw.rect(
-                    self.screen,
-                    (255, 255, 255),
-                    (bar_x, bar_y, bar_width, bar_height),
-                    1,
-                )
+                    feet_height = 10
+                    feet_rect = pygame.Rect(
+                        self.player.hitbox_rect.left,
+                        self.player.hitbox_rect.bottom - feet_height,
+                        self.player.hitbox_rect.width,
+                        feet_height,
+                    )
+                    offset_feet = feet_rect.copy()
+                    offset_feet.topleft -= offset
+                    pygame.draw.rect(self.screen, (0, 255, 255), offset_feet, 3)
 
-                feet_height = 10
-                feet_rect = pygame.Rect(
-                    self.player.hitbox_rect.left,
-                    self.player.hitbox_rect.bottom - feet_height,
-                    self.player.hitbox_rect.width,
-                    feet_height,
-                )
-                offset_feet = feet_rect.copy()
-                offset_feet.topleft -= offset
-                pygame.draw.rect(self.screen, (0, 255, 255), offset_feet, 3)
+                    offset_player = self.player.rect.copy()
+                    offset_player.topleft -= offset
+                    pygame.draw.rect(self.screen, (0, 0, 255), offset_player, 2)
 
-                offset_player = self.player.rect.copy()
-                offset_player.topleft -= offset
-                pygame.draw.rect(self.screen, (0, 0, 255), offset_player, 2)
-
-            # Draw HUD (Timer, arrows, treasure, and exit status)
-            if self.game_state == GameState.PLAYING:
-                font = pygame.font.Font(None, 36)
+                # Draw HUD (Timer, arrows, treasure, and exit status)
+                font = get_pixel_font(36)
 
                 # Timer (top center)
                 minutes = int(self.time_remaining // 60)
@@ -906,7 +928,7 @@ class Game:
                 self.draw_game_over_screen()
             elif self.debug_mode:
                 # Debug info (only in PLAYING state)
-                font = pygame.font.Font(None, 36)
+                font = get_pixel_font(28)
                 debug_text = font.render(
                     f"Player pos: {self.player.rect.topleft} | Animation: {self.player.current_animation}",
                     True,
@@ -920,125 +942,43 @@ class Game:
                     True,
                     (255, 255, 255),
                 )
-                self.screen.blit(debug_text2, (10, 50))
+                self.screen.blit(debug_text2, (10, 40))
 
             pygame.display.update()
 
         pygame.quit()
 
+    def draw_main_menu(self):
+        """Draw the main menu screen"""
+        self.menu_screens.draw_main_menu(self.menu_selection, self.menu_options)
+
+    def draw_controls_screen(self):
+        """Draw the controls/how to play screen"""
+        self.menu_screens.draw_controls_screen()
+
     def draw_victory_screen(self):
         """Draw victory screen with stats"""
-        # Semi-transparent overlay
-        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 180))
-        self.screen.blit(overlay, (0, 0))
-
-        # Calculate game stats
-        elapsed_time = (
-            self.game_end_time - self.game_start_time
-        ) / 1000.0  # Convert to seconds
-        minutes = int(elapsed_time // 60)
-        seconds = int(elapsed_time % 60)
-
-        # Fonts
-        title_font = pygame.font.Font(None, 96)
-        font = pygame.font.Font(None, 48)
-        small_font = pygame.font.Font(None, 36)
-
-        # Title
-        title_text = title_font.render("VICTORY!", True, (255, 215, 0))
-        title_rect = title_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 150)
-        )
-        self.screen.blit(title_text, title_rect)
-
-        # Success message
-        success_text = font.render("Escaped with the treasure!", True, (100, 255, 100))
-        success_rect = success_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 80)
-        )
-        self.screen.blit(success_text, success_rect)
-
-        # Stats
-        time_text = small_font.render(
-            f"Escape Time: {minutes:02d}:{seconds:02d}", True, (255, 255, 255)
-        )
-        time_rect = time_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 10)
-        )
-        self.screen.blit(time_text, time_rect)
-
-        health_text = font.render(
-            f"Health Remaining: {self.player.health}/{self.player.max_health}",
-            True,
-            (0, 255, 0),
-        )
-        health_rect = health_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20)
-        )
-        self.screen.blit(health_text, health_rect)
-
-        # Restart prompt
-        restart_text = small_font.render("Press R to Restart", True, (200, 200, 200))
-        restart_rect = restart_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 120)
-        )
-        self.screen.blit(restart_text, restart_rect)
+        elapsed_time = (self.game_end_time - self.game_start_time) / 1000.0
+        game_stats = {
+            "elapsed_time": elapsed_time,
+            "player_health": self.player.health,
+            "player_max_health": self.player.max_health,
+        }
+        self.menu_screens.draw_victory_screen(game_stats)
 
     def draw_game_over_screen(self):
         """Draw game over screen"""
-        # Semi-transparent overlay
-        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 180))
-        self.screen.blit(overlay, (0, 0))
-
-        # Calculate game stats
-        elapsed_time = (
-            self.game_end_time - self.game_start_time
-        ) / 1000.0  # Convert to seconds
-        minutes = int(elapsed_time // 60)
-        seconds = int(elapsed_time % 60)
-
-        # Fonts
-        title_font = pygame.font.Font(None, 96)
-        font = pygame.font.Font(None, 48)
-        small_font = pygame.font.Font(None, 36)
-
-        # Title
-        title_text = title_font.render("GAME OVER", True, (255, 0, 0))
-        title_rect = title_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 150)
-        )
-        self.screen.blit(title_text, title_rect)
-
-        # Death message
-        death_message = self.death_reason if self.death_reason else "You died!"
-        death_text = font.render(death_message, True, (255, 100, 100))
-        death_rect = death_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50)
-        )
-        self.screen.blit(death_text, death_rect)
-
-        # Stats
-        time_text = small_font.render(
-            f"Survived: {minutes:02d}:{seconds:02d}", True, (200, 200, 200)
-        )
-        time_rect = time_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20)
-        )
-        self.screen.blit(time_text, time_rect)
-
-        # Restart prompt
-        restart_text = small_font.render("Press R to Restart", True, (200, 200, 200))
-        restart_rect = restart_text.get_rect(
-            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 120)
-        )
-        self.screen.blit(restart_text, restart_rect)
+        elapsed_time = (self.game_end_time - self.game_start_time) / 1000.0
+        game_stats = {
+            "elapsed_time": elapsed_time,
+            "death_reason": self.death_reason if self.death_reason else "You died!",
+        }
+        self.menu_screens.draw_game_over_screen(game_stats)
 
     def restart(self):
         """Restart the game by reinitializing"""
         print("[Game] Restarting...")
-        self.__init__()
+        self.initialize_game()
 
 
 if __name__ == "__main__":
