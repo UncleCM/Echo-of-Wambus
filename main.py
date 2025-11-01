@@ -7,7 +7,6 @@ from pytmx.util_pygame import load_pygame
 from prolog_interface import PrologEngine
 from sound_system import SoundManager
 from map_knowledge import MapKnowledge
-from sound_manager import SoundManager
 from game_state import GameState
 from ui import MenuScreens, get_pixel_font
 from lighting import FlashlightSystem
@@ -90,16 +89,6 @@ class Game:
         # Create player and give it a reference to the Prolog engine (single instance)
         self.player = Player(
             spawn_pos, self.all_sprites, self.collision_sprites, self.prolog, self.sound_manager
-        )
-
-        # Create Wumpus enemy
-        wumpus_pos = self.find_wumpus_spawn()
-        self.wumpus = Wumpus(
-            wumpus_pos,
-            [self.all_sprites, self.wumpus_sprites],
-            self.collision_sprites,
-            self.prolog,
-            self.sound_manager,
         )
 
         # Create multiple Wumpus enemies (3-4 ตัว)
@@ -455,9 +444,10 @@ class Game:
                     exit_portal.unlock()
                     self.exit_unlocked = True
 
-                # Enrage Wumpus (50% speed boost)
-                self.wumpus.speed *= 1.5
-                print("[Game] Treasure collected! Wumpus is enraged! Find the exit!")
+                # Enrage all Wumpus (50% speed boost)
+                for wumpus in self.wumpus_sprites:
+                    wumpus.speed *= 1.5
+                print("[Game] Treasure collected! All Wumpus are enraged! Find the exit!")
 
     def check_exit_reached(self):
         """Check if player reaches unlocked exit"""
@@ -499,25 +489,31 @@ class Game:
             if not self.wumpus.is_alive:
                 continue
 
-            # Method 1: Direct hitbox collision
-            hit_by_collision = arrow.hitbox_rect.colliderect(self.wumpus.hitbox_rect)
+            # Check collision with all Wumpus enemies
+            for wumpus in self.wumpus_sprites:
+                if not wumpus.is_alive:
+                    continue
 
-            # Method 2: Distance-based detection (more forgiving)
-            arrow_center = pygame.math.Vector2(arrow.rect.center)
-            wumpus_center = pygame.math.Vector2(self.wumpus.hitbox_rect.center)
-            distance = arrow_center.distance_to(wumpus_center)
-            hit_by_distance = distance < 60  # Hit if within 60 pixels
+                # Method 1: Direct hitbox collision
+                hit_by_collision = arrow.hitbox_rect.colliderect(wumpus.hitbox_rect)
 
-            # Hit if either method detects collision
-            if hit_by_collision or hit_by_distance:
-                # Apply stun to Wumpus
-                self.wumpus.apply_stun()
+                # Method 2: Distance-based detection (more forgiving)
+                arrow_center = pygame.math.Vector2(arrow.rect.center)
+                wumpus_center = pygame.math.Vector2(wumpus.hitbox_rect.center)
+                distance = arrow_center.distance_to(wumpus_center)
+                hit_by_distance = distance < 60  # Hit if within 60 pixels
 
-                # Remove arrow
-                arrow.kill()
-                print(
-                    f"[Combat] Arrow hit Wumpus! Distance: {distance:.1f}px, Wumpus stunned for 3 seconds!"
-                )
+                # Hit if either method detects collision
+                if hit_by_collision or hit_by_distance:
+                    # Apply stun to Wumpus
+                    wumpus.apply_stun()
+
+                    # Remove arrow
+                    arrow.kill()
+                    print(
+                        f"[Combat] Arrow hit Wumpus! Distance: {distance:.1f}px, Wumpus stunned for 3 seconds!"
+                    )
+                    break  # Arrow can only hit one Wumpus
 
     def check_arrow_pickups(self):
         """Check if player collects arrow pickups"""
@@ -595,8 +591,8 @@ class Game:
                     self.game_end_time = pygame.time.get_ticks()
                     self.death_reason = "Defeated by the Wumpus!"
                     self.sound_manager.stop_footstep_loop()
-                self.sound_manager.play_sound("game_over")
-                print("GAME OVER - Player defeated by Wumpus!")
+                    self.sound_manager.play_sound("game_over")
+                    print("GAME OVER - Player defeated by Wumpus!")
                     return  # Exit after death
 
     def render_lighting(self):
@@ -776,42 +772,45 @@ class Game:
                     offset_hitbox.topleft -= offset
                     pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
 
-                    # Draw Wumpus hitbox and detection range
-                    if self.wumpus.is_alive:
-                        wumpus_hitbox = self.wumpus.hitbox_rect.copy()
+                    # Draw all Wumpus hitboxes and detection ranges
+                    for idx, wumpus in enumerate(self.wumpus_sprites):
+                        if not wumpus.is_alive:
+                            continue
+
+                        wumpus_hitbox = wumpus.hitbox_rect.copy()
                         wumpus_hitbox.topleft -= offset
                         pygame.draw.rect(self.screen, (255, 0, 255), wumpus_hitbox, 2)
 
                         # Hearing range circle (sound-based detection)
-                        wumpus_center = self.wumpus.hitbox_rect.center
+                        wumpus_center = wumpus.hitbox_rect.center
                         screen_center = (
                             int(wumpus_center[0] - offset.x),
                             int(wumpus_center[1] - offset.y),
                         )
                         
-                    # Draw hearing radius (changes color when roaring)
-                    hearing_color = (255, 50, 50) if self.wumpus.is_roaring else (100, 100, 255)
-                    pygame.draw.circle(
+                        # Draw hearing radius (changes color when roaring)
+                        hearing_color = (255, 50, 50) if wumpus.is_roaring else (100, 100, 255)
+                        pygame.draw.circle(
                             self.screen,
                             hearing_color,
                             screen_center,
-                            self.wumpus.current_hearing_radius,
+                            wumpus.current_hearing_radius,
                             2,
                         )
 
                         # AI state text
                         font = get_pixel_font(24)
                         state_text = font.render(
-                            f"AI: {self.wumpus.ai_state.name if hasattr(self.wumpus.ai_state, 'name') else self.wumpus.ai_state}", 
-                        True, 
-                        (255, 255, 255)
+                            f"W{idx+1} AI: {wumpus.ai_state.name if hasattr(wumpus.ai_state, 'name') else wumpus.ai_state}",
+                            True,
+                            (255, 255, 255)
                         )
                         self.screen.blit(
-                            state_text, (screen_center[0] - 40, screen_center[1] - 100)
+                            state_text, (screen_center[0] - 50, screen_center[1] - 100)
                         )
 
                         # Wumpus health bar
-                        health_percent = self.wumpus.health / self.wumpus.max_health
+                        health_percent = wumpus.health / wumpus.max_health
                         bar_width = 100
                         bar_height = 10
                         bar_x = screen_center[0] - bar_width // 2
