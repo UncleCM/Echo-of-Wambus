@@ -345,3 +345,112 @@ spawn_wumpus(X, Y, WumpusID) :-
     NextID is WumpusID + 1,
     retractall(next_wumpus_id(_)),
     assertz(next_wumpus_id(NextID)).
+
+% ============================================================================
+% COMBAT SYSTEM
+% ============================================================================
+
+% Check if arrow hits Wumpus (distance-based collision)
+arrow_hit_wumpus(ArrowX, ArrowY, WumpusX, WumpusY, HitRadius) :-
+    distance_squared(ArrowX, ArrowY, WumpusX, WumpusY, DistSq),
+    HitRadiusSq is HitRadius * HitRadius,
+    DistSq =< HitRadiusSq.
+
+% Check if Wumpus can attack player (distance and state check)
+wumpus_can_attack_player(WumpusX, WumpusY, PlayerX, PlayerY, AttackRange, WumpusState) :-
+    % Must be in attack state or chasing
+    (WumpusState = attack ; WumpusState = chase),
+    % Check if within attack range
+    distance_squared(WumpusX, WumpusY, PlayerX, PlayerY, DistSq),
+    AttackRangeSq is AttackRange * AttackRange,
+    DistSq =< AttackRangeSq.
+
+% Calculate damage dealt (could add modifiers here)
+calculate_damage(BaseDamage, DamageModifier, ActualDamage) :-
+    ActualDamage is BaseDamage * DamageModifier.
+
+% ============================================================================
+% VICTORY & EXIT SYSTEM
+% ============================================================================
+
+:- dynamic exit_position/2.
+:- dynamic exit_unlocked/1.
+
+% Initialize exit system
+init_exit(ExitX, ExitY) :-
+    retractall(exit_position(_, _)),
+    retractall(exit_unlocked(_)),
+    assertz(exit_position(ExitX, ExitY)),
+    assertz(exit_unlocked(false)).
+
+% Unlock the exit (after collecting treasure)
+unlock_exit :-
+    retractall(exit_unlocked(_)),
+    assertz(exit_unlocked(true)).
+
+% Check if player can exit the game (has treasure, exit unlocked, at exit position)
+can_exit_game(PlayerX, PlayerY, PlayerW, PlayerH) :-
+    % Must have collected treasure
+    treasure_collected(true),
+    % Exit must be unlocked
+    exit_unlocked(true),
+    % Must be at exit position (within collision range)
+    exit_position(ExitX, ExitY),
+    ExitW = 48,  % Exit portal size
+    ExitH = 48,
+    rects_collide(PlayerX, PlayerY, PlayerW, PlayerH, ExitX, ExitY, ExitW, ExitH).
+
+% ============================================================================
+% ITEM PICKUP SYSTEM
+% ============================================================================
+
+:- dynamic arrow_pickup/3.    % arrow_pickup(ID, X, Y)
+:- dynamic rock_pickup/3.      % rock_pickup(ID, X, Y)
+
+% Add arrow pickup to world
+add_arrow_pickup(ID, X, Y) :-
+    assertz(arrow_pickup(ID, X, Y)).
+
+% Add rock pickup to world
+add_rock_pickup(ID, X, Y) :-
+    assertz(rock_pickup(ID, X, Y)).
+
+% Check if player can pickup arrow (returns PickupID if successful)
+can_pickup_arrow(PlayerX, PlayerY, PlayerW, PlayerH, PickupID) :-
+    arrow_pickup(PickupID, ItemX, ItemY),
+    ItemW = 32,  % Pickup size
+    ItemH = 32,
+    rects_collide(PlayerX, PlayerY, PlayerW, PlayerH, ItemX, ItemY, ItemW, ItemH).
+
+% Check if player can pickup rock (returns PickupID if successful)
+can_pickup_rock(PlayerX, PlayerY, PlayerW, PlayerH, PickupID) :-
+    rock_pickup(PickupID, ItemX, ItemY),
+    ItemW = 32,  % Pickup size
+    ItemH = 32,
+    rects_collide(PlayerX, PlayerY, PlayerW, PlayerH, ItemX, ItemY, ItemW, ItemH).
+
+% Remove arrow pickup after collection
+remove_arrow_pickup(PickupID) :-
+    retract(arrow_pickup(PickupID, _, _)).
+
+% Remove rock pickup after collection
+remove_rock_pickup(PickupID) :-
+    retract(rock_pickup(PickupID, _, _)).
+
+% Get all arrow pickups (for Python to query)
+get_all_arrow_pickups(Pickups) :-
+    findall([ID, X, Y], arrow_pickup(ID, X, Y), Pickups).
+
+% Get all rock pickups (for Python to query)
+get_all_rock_pickups(Pickups) :-
+    findall([ID, X, Y], rock_pickup(ID, X, Y), Pickups).
+
+% ============================================================================
+% HELPER PREDICATES FOR GAME LOGIC
+% ============================================================================
+
+% Check if player is near chest (for interaction prompt)
+near_chest(PlayerX, PlayerY, InteractionRadius) :-
+    (treasure(_ID, ChestX, ChestY) ; mimic(_ID, ChestX, ChestY, _)),
+    distance_to_chest(PlayerX, PlayerY, ChestX, ChestY, Distance),
+    Distance =< InteractionRadius.

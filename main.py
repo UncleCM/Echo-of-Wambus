@@ -309,6 +309,10 @@ class Game:
         entrance_pos = self.find_spawn_position()
         exit_portal = ExitPortal(entrance_pos, [self.all_sprites, self.exit_sprites])
         print(f"Spawned exit portal at entrance: {entrance_pos}")
+        
+        # Initialize exit in Prolog
+        if self.prolog and self.prolog.available:
+            self.prolog.init_exit(int(entrance_pos[0]), int(entrance_pos[1]))
 
     def spawn_arrow_pickups(self):
         """Spawn arrow pickups in map (3 locations, no respawn)"""
@@ -334,8 +338,14 @@ class Game:
                     pickup = ArrowPickup(
                         (pickup_x, pickup_y),
                         [self.all_sprites, self.arrow_pickup_sprites],
+                        pickup_count  # Pass ID for Prolog tracking
                     )
                     pickup_count += 1
+                    
+                    # Add to Prolog
+                    if self.prolog and self.prolog.available:
+                        self.prolog.add_arrow_pickup(pickup_count, int(pickup_x), int(pickup_y))
+                    
                     print(
                         f"Spawned arrow pickup {pickup_count} at ({pickup_x}, {pickup_y})"
                     )
@@ -356,8 +366,13 @@ class Game:
         for i, pos in enumerate(
             fallback_positions[: ARROW_PICKUP_COUNT - pickup_count]
         ):
-            pickup = ArrowPickup(pos, [self.all_sprites, self.arrow_pickup_sprites])
+            pickup = ArrowPickup(pos, [self.all_sprites, self.arrow_pickup_sprites], pickup_count)
             pickup_count += 1
+            
+            # Add to Prolog
+            if self.prolog and self.prolog.available:
+                self.prolog.add_arrow_pickup(pickup_count, int(pos[0]), int(pos[1]))
+            
             print(f"No arrow spawn found, using fallback {pickup_count}: {pos}")
     
     def spawn_rock_pickups(self):
@@ -374,8 +389,13 @@ class Game:
                             obj.x * self.map_scale,
                             obj.y * self.map_scale
                         )
-                        pickup = RockPickup(pos, [self.all_sprites, self.rock_pickup_sprites])
                         pickup_count += 1
+                        pickup = RockPickup(pos, [self.all_sprites, self.rock_pickup_sprites], pickup_count)
+                        
+                        # Add to Prolog
+                        if self.prolog and self.prolog.available:
+                            self.prolog.add_rock_pickup(pickup_count, int(pos[0]), int(pos[1]))
+                        
                         print(f"Rock pickup {pickup_count} at: {pos}")
                     return
         
@@ -393,8 +413,13 @@ class Game:
         ]
         
         for i, pos in enumerate(fallback_positions[:ROCK_PICKUP_COUNT]):
-            pickup = RockPickup(pos, [self.all_sprites, self.rock_pickup_sprites])
             pickup_count += 1
+            pickup = RockPickup(pos, [self.all_sprites, self.rock_pickup_sprites], pickup_count)
+            
+            # Add to Prolog
+            if self.prolog and self.prolog.available:
+                self.prolog.add_rock_pickup(pickup_count, int(pos[0]), int(pos[1]))
+            
             print(f"Rock pickup {pickup_count} (fallback) at: {pos}")
 
     def setup(self):
@@ -488,7 +513,7 @@ class Game:
                         # Real treasure found!
                         self.has_treasure = True
                         
-                        # Unlock exit
+                        # Unlock exit in both Python and Prolog
                         if len(self.exit_sprites) > 0:
                             exit_portal = self.exit_sprites.sprites()[0]
                             exit_portal.unlock()
@@ -500,9 +525,10 @@ class Game:
                         
                         print("[Game] Real treasure found! Wumpus enraged! Find exit!")
                         
-                        # Update Prolog
+                        # Update Prolog (collect treasure and unlock exit)
                         if self.prolog and self.prolog.available:
                             self.prolog.collect_treasure()
+                            self.prolog.unlock_exit()
                         
                     elif result == 'mimic':
                         # Mimic! Spawn new Wumpus
@@ -526,14 +552,24 @@ class Game:
                     break
 
     def check_exit_reached(self):
-        """Check if player reaches unlocked exit"""
-        if self.has_treasure and self.exit_unlocked and len(self.exit_sprites) > 0:
-            # Check collision between player and exit
-            exit_portal = self.exit_sprites.sprites()[0]
-            player_rect = self.player.hitbox_rect
-            exit_rect = exit_portal.hitbox_rect
-
-            if player_rect.colliderect(exit_rect):
+        """Check if player reaches unlocked exit using Prolog"""
+        if len(self.exit_sprites) > 0:
+            # Use Prolog to check victory conditions
+            can_exit = False
+            if self.prolog and self.prolog.available:
+                can_exit = self.prolog.can_exit_game(
+                    int(self.player.hitbox_rect.x),
+                    int(self.player.hitbox_rect.y),
+                    int(self.player.hitbox_rect.width),
+                    int(self.player.hitbox_rect.height)
+                )
+            else:
+                # Fallback: Python collision check
+                if self.has_treasure and self.exit_unlocked:
+                    exit_portal = self.exit_sprites.sprites()[0]
+                    can_exit = self.player.hitbox_rect.colliderect(exit_portal.hitbox_rect)
+            
+            if can_exit:
                 self.game_state = GameState.VICTORY
                 self.game_end_time = pygame.time.get_ticks()
                 print("VICTORY - Escaped with the treasure!")
@@ -560,48 +596,82 @@ class Game:
             print(f"[Arrow] Shot arrow from {arrow_pos} in direction {arrow_direction}")
 
     def check_arrow_hits(self):
-        """Check if any arrows hit the Wumpus"""
+        """Check if any arrows hit the Wumpus using Prolog"""
         for arrow in self.arrow_sprites:
-            if not self.wumpus.is_alive:
-                continue
-
             # Check collision with all Wumpus enemies
             for wumpus in self.wumpus_sprites:
                 if not wumpus.is_alive:
                     continue
 
-                # Method 1: Direct hitbox collision
-                hit_by_collision = arrow.hitbox_rect.colliderect(wumpus.hitbox_rect)
-
-                # Method 2: Distance-based detection (more forgiving)
-                arrow_center = pygame.math.Vector2(arrow.rect.center)
-                wumpus_center = pygame.math.Vector2(wumpus.hitbox_rect.center)
-                distance = arrow_center.distance_to(wumpus_center)
-                hit_by_distance = distance < 60  # Hit if within 60 pixels
+                # Use Prolog to check if arrow hits Wumpus
+                arrow_center = arrow.rect.center
+                wumpus_center = wumpus.hitbox_rect.center
+                
+                hit = False
+                if self.prolog and self.prolog.available:
+                    # Use Prolog for authoritative hit detection
+                    hit = self.prolog.arrow_hit_wumpus(
+                        int(arrow_center[0]),
+                        int(arrow_center[1]),
+                        int(wumpus_center[0]),
+                        int(wumpus_center[1]),
+                        60  # Hit radius
+                    )
+                else:
+                    # Fallback to distance check if Prolog unavailable
+                    arrow_vec = pygame.math.Vector2(arrow_center)
+                    wumpus_vec = pygame.math.Vector2(wumpus_center)
+                    distance = arrow_vec.distance_to(wumpus_vec)
+                    hit = distance < 60
 
                 # Hit if either method detects collision
-                if hit_by_collision or hit_by_distance:
+                if hit:
                     # Apply stun to Wumpus
                     wumpus.apply_stun()
 
                     # Remove arrow
                     arrow.kill()
                     print(
-                        f"[Combat] Arrow hit Wumpus! Distance: {distance:.1f}px, Wumpus stunned for 3 seconds!"
+                        f"[Combat] Arrow hit Wumpus! Wumpus stunned for 3 seconds!"
                     )
                     break  # Arrow can only hit one Wumpus
 
     def check_arrow_pickups(self):
-        """Check if player collects arrow pickups"""
-        for pickup in self.arrow_pickup_sprites:
-            if self.player.hitbox_rect.colliderect(pickup.hitbox_rect):
-                # Try to add arrow to player
-                if self.player.add_arrows(1):
-                    # Remove pickup permanently (no respawn)
-                    pickup.kill()
-                    print(
-                        f"[Pickup] Collected arrow pickup! Total arrows: {self.player.arrows}/{self.player.max_arrows}"
-                    )
+        """Check if player collects arrow pickups using Prolog"""
+        if self.prolog and self.prolog.available:
+            # Use Prolog to check pickup
+            pickup_id = self.prolog.can_pickup_arrow(
+                int(self.player.hitbox_rect.x),
+                int(self.player.hitbox_rect.y),
+                int(self.player.hitbox_rect.width),
+                int(self.player.hitbox_rect.height)
+            )
+            
+            if pickup_id is not None:
+                # Find and remove the sprite
+                for pickup in self.arrow_pickup_sprites:
+                    if hasattr(pickup, 'pickup_id') and pickup.pickup_id == pickup_id:
+                        if self.player.add_arrows(1):
+                            pickup.kill()
+                            self.prolog.remove_arrow_pickup(pickup_id)
+                            print(f"[Pickup] Collected arrow! Total: {self.player.arrows}/{self.player.max_arrows}")
+                        break
+                else:
+                    # If pickup doesn't have ID, use fallback collision check
+                    for pickup in self.arrow_pickup_sprites:
+                        if self.player.hitbox_rect.colliderect(pickup.hitbox_rect):
+                            if self.player.add_arrows(1):
+                                pickup.kill()
+                                self.prolog.remove_arrow_pickup(pickup_id)
+                                print(f"[Pickup] Collected arrow! Total: {self.player.arrows}/{self.player.max_arrows}")
+                            break
+        else:
+            # Fallback: Python collision check
+            for pickup in self.arrow_pickup_sprites:
+                if self.player.hitbox_rect.colliderect(pickup.hitbox_rect):
+                    if self.player.add_arrows(1):
+                        pickup.kill()
+                        print(f"[Pickup] Collected arrow! Total: {self.player.arrows}/{self.player.max_arrows}")
     
     def handle_rock_throw(self):
         """Handle player throwing rock (E key pressed - keyboard only)"""
@@ -624,38 +694,80 @@ class Game:
             print(f"[Rock] Threw rock in direction: {rock_direction}")
     
     def check_rock_pickups(self):
-        """Check if player collects rock pickups"""
-        for pickup in self.rock_pickup_sprites:
-            if self.player.hitbox_rect.colliderect(pickup.hitbox_rect):
-                # Add rocks to player
-                self.player.add_rocks(ROCK_PICKUP_COUNT)
-                # Remove pickup
-                pickup.kill()
-                print(f"[Pickup] Collected rocks! Total: {self.player.rocks}/{self.player.max_rocks}")
+        """Check if player collects rock pickups using Prolog"""
+        if self.prolog and self.prolog.available:
+            # Use Prolog to check pickup
+            pickup_id = self.prolog.can_pickup_rock(
+                int(self.player.hitbox_rect.x),
+                int(self.player.hitbox_rect.y),
+                int(self.player.hitbox_rect.width),
+                int(self.player.hitbox_rect.height)
+            )
+            
+            if pickup_id is not None:
+                # Find and remove the sprite
+                for pickup in self.rock_pickup_sprites:
+                    if hasattr(pickup, 'pickup_id') and pickup.pickup_id == pickup_id:
+                        self.player.add_rocks(ROCK_PICKUP_COUNT)
+                        pickup.kill()
+                        self.prolog.remove_rock_pickup(pickup_id)
+                        print(f"[Pickup] Collected rocks! Total: {self.player.rocks}/{self.player.max_rocks}")
+                        break
+                else:
+                    # If pickup doesn't have ID, use fallback
+                    for pickup in self.rock_pickup_sprites:
+                        if self.player.hitbox_rect.colliderect(pickup.hitbox_rect):
+                            self.player.add_rocks(ROCK_PICKUP_COUNT)
+                            pickup.kill()
+                            self.prolog.remove_rock_pickup(pickup_id)
+                            print(f"[Pickup] Collected rocks! Total: {self.player.rocks}/{self.player.max_rocks}")
+                            break
+        else:
+            # Fallback: Python collision check
+            for pickup in self.rock_pickup_sprites:
+                if self.player.hitbox_rect.colliderect(pickup.hitbox_rect):
+                    self.player.add_rocks(ROCK_PICKUP_COUNT)
+                    pickup.kill()
+                    print(f"[Pickup] Collected rocks! Total: {self.player.rocks}/{self.player.max_rocks}")
 
     def check_player_attack(self):
         """DEPRECATED - Player now uses arrow combat system instead of melee"""
         pass
 
     def check_wumpus_attack(self):
-        """Check if any Wumpus's attack hits the Player"""
+        """Check if any Wumpus's attack hits the Player using Prolog"""
         # Only check if game is still playing
         if self.game_state != GameState.PLAYING:
             return
 
-        player_pos = pygame.math.Vector2(self.player.hitbox_rect.center)
+        player_center = self.player.hitbox_rect.center
         
         # Check all Wumpus enemies
         for wumpus in self.wumpus_sprites:
             if not wumpus.is_alive or wumpus.is_stunned:
                 continue
             
-            # Calculate distance
-            wumpus_pos = pygame.math.Vector2(wumpus.hitbox_rect.center)
-            distance = player_pos.distance_to(wumpus_pos)
+            wumpus_center = wumpus.hitbox_rect.center
+            
+            # Use Prolog to check if Wumpus can attack
+            can_attack = False
+            if self.prolog and self.prolog.available:
+                can_attack = self.prolog.wumpus_can_attack_player(
+                    int(wumpus_center[0]),
+                    int(wumpus_center[1]),
+                    int(player_center[0]),
+                    int(player_center[1]),
+                    int(wumpus.attack_range),
+                    wumpus.ai_state
+                )
+            else:
+                # Fallback: Distance check
+                wumpus_pos = pygame.math.Vector2(wumpus_center)
+                player_pos = pygame.math.Vector2(player_center)
+                distance = player_pos.distance_to(wumpus_pos)
+                can_attack = distance <= wumpus.attack_range and wumpus.ai_state == "attack"
 
-            # Check if Player is in attack range and Wumpus is attacking
-            if distance <= wumpus.attack_range and wumpus.ai_state == "attack":
+            if can_attack:
                 damage = self.player.take_damage(wumpus.damage)
                 print(
                     f"[Combat] Wumpus hit Player for {damage} damage! Player HP: {self.player.health}/{self.player.max_health}"

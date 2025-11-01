@@ -319,8 +319,10 @@ class Arrow(pygame.sprite.Sprite):
 
 class ArrowPickup(pygame.sprite.Sprite):
     """Arrow pickup collectible - gives +1 arrow"""
-    def __init__(self, pos, groups):
+    def __init__(self, pos, groups, pickup_id=None):
         super().__init__(groups)
+        
+        self.pickup_id = pickup_id  # For Prolog tracking
         
         # Create quiver/arrow bundle visual
         size = 24
@@ -468,8 +470,10 @@ class Rock(pygame.sprite.Sprite):
 
 class RockPickup(pygame.sprite.Sprite):
     """Collectible rock"""
-    def __init__(self, pos, groups):
+    def __init__(self, pos, groups, pickup_id=None):
         super().__init__(groups)
+        
+        self.pickup_id = pickup_id  # For Prolog tracking
         
         # Visual
         size = 20

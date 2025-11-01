@@ -194,3 +194,110 @@ class PrologEngine:
         query = "collect_treasure"
         self._query(query)
         print("[PrologEngine] Treasure collected")
+    
+    # =========================================================================
+    # COMBAT SYSTEM
+    # =========================================================================
+    
+    def arrow_hit_wumpus(self, arrow_x, arrow_y, wumpus_x, wumpus_y, hit_radius=60):
+        """
+        Check if arrow hits Wumpus
+        Returns: True if hit, False otherwise
+        """
+        query = f"arrow_hit_wumpus({arrow_x}, {arrow_y}, {wumpus_x}, {wumpus_y}, {hit_radius})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def wumpus_can_attack_player(self, wumpus_x, wumpus_y, player_x, player_y, attack_range, wumpus_state):
+        """
+        Check if Wumpus can attack player
+        Returns: True if can attack, False otherwise
+        """
+        query = f"wumpus_can_attack_player({wumpus_x}, {wumpus_y}, {player_x}, {player_y}, {attack_range}, {wumpus_state})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    # =========================================================================
+    # VICTORY & EXIT SYSTEM
+    # =========================================================================
+    
+    def init_exit(self, exit_x, exit_y):
+        """Initialize exit portal position"""
+        query = f"init_exit({exit_x}, {exit_y})"
+        self._query(query)
+    
+    def unlock_exit(self):
+        """Unlock the exit portal (after collecting treasure)"""
+        query = "unlock_exit"
+        self._query(query)
+        print("[PrologEngine] Exit unlocked")
+    
+    def can_exit_game(self, player_x, player_y, player_w, player_h):
+        """
+        Check if player can exit the game
+        Returns: True if all victory conditions met, False otherwise
+        """
+        query = f"can_exit_game({player_x}, {player_y}, {player_w}, {player_h})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    # =========================================================================
+    # ITEM PICKUP SYSTEM
+    # =========================================================================
+    
+    def add_arrow_pickup(self, pickup_id, x, y):
+        """Add arrow pickup to Prolog world"""
+        query = f"add_arrow_pickup({pickup_id}, {x}, {y})"
+        self._query(query)
+    
+    def add_rock_pickup(self, pickup_id, x, y):
+        """Add rock pickup to Prolog world"""
+        query = f"add_rock_pickup({pickup_id}, {x}, {y})"
+        self._query(query)
+    
+    def can_pickup_arrow(self, player_x, player_y, player_w, player_h):
+        """
+        Check if player can pickup any arrow
+        Returns: Pickup ID if found, None otherwise
+        """
+        query = f"can_pickup_arrow({player_x}, {player_y}, {player_w}, {player_h}, PickupID)"
+        results = self._query(query)
+        if results:
+            try:
+                return results[0]['PickupID']
+            except (KeyError, IndexError):
+                return None
+        return None
+    
+    def can_pickup_rock(self, player_x, player_y, player_w, player_h):
+        """
+        Check if player can pickup any rock
+        Returns: Pickup ID if found, None otherwise
+        """
+        query = f"can_pickup_rock({player_x}, {player_y}, {player_w}, {player_h}, PickupID)"
+        results = self._query(query)
+        if results:
+            try:
+                return results[0]['PickupID']
+            except (KeyError, IndexError):
+                return None
+        return None
+    
+    def remove_arrow_pickup(self, pickup_id):
+        """Remove arrow pickup after collection"""
+        query = f"remove_arrow_pickup({pickup_id})"
+        self._query(query)
+    
+    def remove_rock_pickup(self, pickup_id):
+        """Remove rock pickup after collection"""
+        query = f"remove_rock_pickup({pickup_id})"
+        self._query(query)
+    
+    def near_chest(self, player_x, player_y, interaction_radius=60):
+        """
+        Check if player is near any chest (for interaction prompt)
+        Returns: True if near chest, False otherwise
+        """
+        query = f"near_chest({player_x}, {player_y}, {interaction_radius})"
+        results = self._query(query)
+        return len(results) > 0
