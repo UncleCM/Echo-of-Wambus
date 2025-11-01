@@ -1,3 +1,5 @@
 .venv
 venv
 __pycache__
+__pycache__/Settings.cpython-312.pyc
+__pycache__/sprites.cpython-312.pyc
