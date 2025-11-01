@@ -2,7 +2,7 @@
 import pygame
 from os.path import join
 from Settings import *
-from entity import Entity
+from entities import Entity
 from enemies.base import WumpusAIState
 from enemies.wumpus_ai import WumpusAI
 

@@ -1,7 +1,7 @@
 """Player character - Main player class"""
 import pygame
 from Settings import *
-from entity import Entity
+from entities import Entity
 from player.inventory import PlayerInventory
 from player.input import PlayerInput
 from player.animations import PlayerAnimations
