@@ -925,13 +925,13 @@ class Game:
         self.screen.fill((20, 20, 30))  # Dark background
 
         # Title
-        title_font = get_pixel_font(80)
+        title_font = get_pixel_font(64)
         title_text = title_font.render("CONTROLS", True, (255, 215, 0))
-        title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, 80))
+        title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, 60))
         self.screen.blit(title_text, title_rect)
 
         # Controls
-        font = get_pixel_font(40)
+        font = get_pixel_font(32)
         controls = [
             ("WASD / Arrow Keys", "Move"),
             ("SPACE", "Shoot Arrow"),
@@ -940,34 +940,34 @@ class Game:
             ("ESC", "Return to Menu"),
         ]
 
-        y_pos = 180
+        y_pos = 140
         for key, action in controls:
             # Key
             key_text = font.render(key, True, (255, 215, 0))
-            key_rect = key_text.get_rect(right=WINDOW_WIDTH // 2 - 40, top=y_pos)
+            key_rect = key_text.get_rect(right=WINDOW_WIDTH // 2 - 30, top=y_pos)
             self.screen.blit(key_text, key_rect)
 
             # Separator
             separator = font.render("-", True, (150, 150, 150))
-            sep_rect = separator.get_rect(center=(WINDOW_WIDTH // 2, y_pos + 15))
+            sep_rect = separator.get_rect(center=(WINDOW_WIDTH // 2, y_pos + 12))
             self.screen.blit(separator, sep_rect)
 
             # Action
             action_text = font.render(action, True, (200, 200, 200))
-            action_rect = action_text.get_rect(left=WINDOW_WIDTH // 2 + 40, top=y_pos)
+            action_rect = action_text.get_rect(left=WINDOW_WIDTH // 2 + 30, top=y_pos)
             self.screen.blit(action_text, action_rect)
 
-            y_pos += 60
+            y_pos += 50
 
         # Objective
-        objective_font = get_pixel_font(50)
+        objective_font = get_pixel_font(42)
         objective_title = objective_font.render("OBJECTIVE:", True, (255, 100, 100))
         objective_rect = objective_title.get_rect(
-            center=(WINDOW_WIDTH // 2, y_pos + 40)
+            center=(WINDOW_WIDTH // 2, y_pos + 30)
         )
         self.screen.blit(objective_title, objective_rect)
 
-        objective_font_small = get_pixel_font(36)
+        objective_font_small = get_pixel_font(28)
         objectives = [
             "1. Find the treasure in the cave",
             "2. Avoid or stun the Wumpus with arrows",
@@ -975,32 +975,19 @@ class Game:
             "4. Complete before time runs out!",
         ]
 
-        obj_y = y_pos + 100
+        obj_y = y_pos + 80
         for obj in objectives:
             obj_text = objective_font_small.render(obj, True, (200, 200, 200))
             obj_rect = obj_text.get_rect(center=(WINDOW_WIDTH // 2, obj_y))
             self.screen.blit(obj_text, obj_rect)
-            obj_y += 45
+            obj_y += 38
 
         # Back instruction
-        back_font = get_pixel_font(32)
+        back_font = get_pixel_font(28)
         back_text = back_font.render(
             "Press ESC to return to menu", True, (150, 150, 150)
         )
-        back_rect = back_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50))
-        self.screen.blit(back_text, back_rect)
-        for obj in objectives:
-            obj_text = objective_font_small.render(obj, True, (200, 200, 200))
-            obj_rect = obj_text.get_rect(center=(WINDOW_WIDTH // 2, obj_y))
-            self.screen.blit(obj_text, obj_rect)
-            obj_y += 45
-
-        # Back instruction
-        back_font = pygame.font.Font(None, 32)
-        back_text = back_font.render(
-            "Press ESC to return to menu", True, (150, 150, 150)
-        )
-        back_rect = back_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50))
+        back_rect = back_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 40))
         self.screen.blit(back_text, back_rect)
 
     def draw_victory_screen(self):
