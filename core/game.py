@@ -11,7 +11,7 @@ from sprites import *
 from groups import AllSprites
 from pytmx.util_pygame import load_pygame
 from prolog_interface import PrologEngine
-from sound_system import SoundManager
+from audio import SoundSystem
 from map_knowledge import MapKnowledge
 from game_state import GameState
 from ui import MenuScreens, get_pixel_font
@@ -37,8 +37,8 @@ class Game:
         self.game_end_time = None
         self.death_reason = None  # Track how player died
 
-        # Initialize sound manager
-        self.sound_manager = SoundManager()
+        # Initialize sound system
+        self.sound_manager = SoundSystem()
 
         # Initialize UI/Menu screens
         self.menu_screens = MenuScreens(self.screen)
@@ -87,7 +87,7 @@ class Game:
         self.rock_pickup_sprites = pygame.sprite.Group()  # Rock pickups to collect
         
         # Sound system for stealth gameplay
-        self.sound_manager = SoundManager()
+        self.sound_manager = SoundSystem()
 
         self.setup()
         
