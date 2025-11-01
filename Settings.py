@@ -7,7 +7,7 @@ TILE_SIZE = 64
 
 # Arrow Combat System Settings
 ARROW_SPEED = 12                 # Pixels per frame
-ARROW_MAX_DISTANCE = 450         # Max travel distance in pixels
+ARROW_MAX_DISTANCE = 300         # Max travel distance (ลดจาก 450 - สั้นกว่า hearing 350px!)
 ARROW_STUN_DURATION = 3.0        # Wumpus stun duration in seconds
 MAX_ARROWS = 2                   # Maximum arrows player can carry
 STARTING_ARROWS = 1              # Arrows at game start

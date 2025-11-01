@@ -26,7 +26,8 @@ class Wumpus(Entity):
         self.sound_manager = sound_manager  # Sound detection system
 
         # Wumpus-specific attributes
-        self.speed = 150  # Slower than player (200)
+        self.speed = 250  # เดินเร็วกว่า player walk (200), ช้ากว่า player dash (400)
+        self.chase_speed = 450  # Chase เร็วกว่า player dash!
         self.damage = 25  # Damage dealt to player
         self.max_health = 150  # More HP than player
         self.health = self.max_health
@@ -35,8 +36,8 @@ class Wumpus(Entity):
         self.attack_range = 50  # Pixels within which Wumpus can attack
 
         # Hearing system (replaces vision)
-        self.hearing_radius = WUMPUS_BASE_HEARING  # Base hearing (200px)
-        self.chase_hearing_bonus = WUMPUS_CHASE_BONUS  # Bonus when chasing (+150px)
+        self.hearing_radius = WUMPUS_BASE_HEARING  # Base hearing (350px)
+        self.chase_hearing_bonus = WUMPUS_CHASE_BONUS  # Bonus when chasing (+200px)
         self.current_hearing_radius = self.hearing_radius
 
         # Stun mechanics (arrow combat)
@@ -447,14 +448,18 @@ class Wumpus(Entity):
         if self.is_stunned:
             self.direction = pygame.math.Vector2(0, 0)
 
-        # Move with pit avoidance and animate
-        self._move_with_pit_avoidance(dt)
+        # Move with pit avoidance (use chase speed when chasing)
+        current_speed = self.chase_speed if self.ai_state == WumpusAIState.CHASING else self.speed
+        self._move_with_pit_avoidance(dt, current_speed)
         self.animate(dt)
     
-    def _move_with_pit_avoidance(self, dt):
+    def _move_with_pit_avoidance(self, dt, speed_override=None):
         """Move while avoiding pits using map knowledge"""
         if self.direction.length() == 0:
             return
+        
+        # Use speed override for chasing
+        movement_speed = speed_override if speed_override is not None else self.speed
         
         # Check if current direction leads to danger
         if self.map_knowledge:
@@ -483,5 +488,5 @@ class Wumpus(Entity):
                         self.roaming_target = None
                     return
         
-        # Normal movement
-        self.move(dt)
+        # Normal movement with custom speed
+        self.move(dt, speed_override=movement_speed)

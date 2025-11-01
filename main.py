@@ -74,16 +74,8 @@ class Game:
             spawn_pos, self.all_sprites, self.collision_sprites, self.prolog
         )
 
-        # Create Wumpus enemy with new sound-based AI
-        wumpus_pos = self.find_wumpus_spawn()
-        self.wumpus = Wumpus(
-            wumpus_pos,
-            [self.all_sprites, self.wumpus_sprites],
-            self.collision_sprites,
-            self.prolog,
-            self.map_knowledge,  # NEW: map awareness
-            self.sound_manager   # NEW: sound detection
-        )
+        # Create multiple Wumpus enemies (3-4 ตัว)
+        self.spawn_wumpus_pack()
 
         # Update Prolog with player position (use hitbox for accuracy)
         self.prolog.update_player_position(
@@ -173,6 +165,43 @@ class Game:
         ) - 200
         print(f"No Wumpus spawn found, using fallback: ({fallback_x}, {fallback_y})")
         return (fallback_x, fallback_y)
+    
+    def spawn_wumpus_pack(self):
+        """Spawn 3-4 Wumpus enemies at different locations"""
+        import random
+        
+        wumpus_count = random.randint(3, 4)  # 3-4 ตัวสุ่ม
+        
+        # Get map dimensions
+        map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
+        map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
+        
+        # Define spawn areas (แบ่งแผนที่เป็น 4 ส่วน)
+        spawn_areas = [
+            (map_width * 0.75, map_height * 0.25),  # Top-right
+            (map_width * 0.75, map_height * 0.75),  # Bottom-right
+            (map_width * 0.25, map_height * 0.75),  # Bottom-left
+            (map_width * 0.50, map_height * 0.50),  # Center
+        ]
+        
+        # Spawn Wumpus in random areas
+        random.shuffle(spawn_areas)
+        
+        for i in range(wumpus_count):
+            base_x, base_y = spawn_areas[i]
+            # Add random offset
+            spawn_x = base_x + random.randint(-100, 100)
+            spawn_y = base_y + random.randint(-100, 100)
+            
+            wumpus = Wumpus(
+                (spawn_x, spawn_y),
+                [self.all_sprites, self.wumpus_sprites],
+                self.collision_sprites,
+                self.prolog,
+                self.map_knowledge,
+                self.sound_manager
+            )
+            print(f"[Wumpus {i+1}/{wumpus_count}] Spawned at ({spawn_x}, {spawn_y})")
 
     def spawn_treasure(self):
         """Spawn treasure collectible"""
@@ -499,29 +528,36 @@ class Game:
         pass
 
     def check_wumpus_attack(self):
-        """Check if Wumpus's attack hits the Player"""
+        """Check if any Wumpus's attack hits the Player"""
         # Only check if game is still playing
         if self.game_state != GameState.PLAYING:
             return
 
-        # Calculate distance between Wumpus and Player
         player_pos = pygame.math.Vector2(self.player.hitbox_rect.center)
-        wumpus_pos = pygame.math.Vector2(self.wumpus.hitbox_rect.center)
-        distance = player_pos.distance_to(wumpus_pos)
+        
+        # Check all Wumpus enemies
+        for wumpus in self.wumpus_sprites:
+            if not wumpus.is_alive or wumpus.is_stunned:
+                continue
+            
+            # Calculate distance
+            wumpus_pos = pygame.math.Vector2(wumpus.hitbox_rect.center)
+            distance = player_pos.distance_to(wumpus_pos)
 
-        # Check if Player is in Wumpus attack range
-        if distance <= self.wumpus.attack_range:
-            damage = self.player.take_damage(self.wumpus.damage)
-            print(
-                f"[Combat] Wumpus hit Player for {damage} damage! Player HP: {self.player.health}/{self.player.max_health}"
-            )
+            # Check if Player is in attack range and Wumpus is attacking
+            if distance <= wumpus.attack_range and wumpus.ai_state == "attack":
+                damage = self.player.take_damage(wumpus.damage)
+                print(
+                    f"[Combat] Wumpus hit Player for {damage} damage! Player HP: {self.player.health}/{self.player.max_health}"
+                )
 
-            # Check if Player died
-            if not self.player.is_alive:
-                self.game_state = GameState.GAME_OVER
-                self.game_end_time = pygame.time.get_ticks()
-                self.death_reason = "Defeated by the Wumpus!"
-                print("GAME OVER - Player defeated by Wumpus!")
+                # Check if Player died
+                if not self.player.is_alive:
+                    self.game_state = GameState.GAME_OVER
+                    self.game_end_time = pygame.time.get_ticks()
+                    self.death_reason = "Defeated by the Wumpus!"
+                    print("GAME OVER - Player defeated by Wumpus!")
+                    return  # Exit after death
 
     def draw_flashlight(self):
         """Draw a directional flashlight beam based on player facing direction."""
@@ -658,12 +694,11 @@ class Game:
                     # Update sound system
                     self.sound_manager.update()
                     
-                    # Update Wumpus AI first (before sprite group update)
-                    if self.wumpus.is_alive:
-                        player_center = pygame.math.Vector2(
-                            self.player.hitbox_rect.center
-                        )
-                        self.wumpus.ai_update(player_center, dt)
+                    # Update all Wumpus AI (before sprite group update)
+                    player_center = pygame.math.Vector2(self.player.hitbox_rect.center)
+                    for wumpus in self.wumpus_sprites:
+                        if wumpus.is_alive:
+                            wumpus.ai_update(player_center, dt)
 
                     # Update all sprites - but Player needs sound_manager now
                     # NOTE: We can't pass dt + sound_manager to all_sprites.update()
@@ -684,13 +719,8 @@ class Game:
                     self.check_arrow_pickups()
                     self.check_rock_pickups()  # NEW: rock pickup collection
 
-                    # Check Wumpus attack hit Player (only if not stunned)
-                    if (
-                        self.wumpus.ai_state == "attack"
-                        and self.player.is_alive
-                        and not self.wumpus.is_stunned
-                    ):
-                        self.check_wumpus_attack()
+                    # Check Wumpus attacks (all of them)
+                    self.check_wumpus_attack()
 
                     # Check treasure and exit
                     self.check_treasure_collection()
