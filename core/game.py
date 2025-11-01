@@ -10,7 +10,7 @@ from enemies import Wumpus
 from sprites import *
 from groups import AllSprites
 from pytmx.util_pygame import load_pygame
-from prolog_interface import PrologEngine
+from ai import PrologInterface
 from audio import SoundSystem
 from map_knowledge import MapKnowledge
 from game_state import GameState
@@ -71,7 +71,7 @@ class Game:
 
         # Initialize Prolog engine (only once)
         if not hasattr(self, "prolog"):
-            self.prolog = PrologEngine()
+            self.prolog = PrologInterface()
             print("✓ Prolog engine initialized")
 
         # Create sprite groups
