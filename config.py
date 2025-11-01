@@ -108,6 +108,7 @@ class AudioConfig:
     
     # Music file names
     MUSIC_MENU = "Game_Background_Music.mp3"
+    MUSIC_IN_GAME = "InGameMusic.mp3"
 
 
 # =============================================================================

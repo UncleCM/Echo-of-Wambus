@@ -46,8 +46,9 @@ class Game:
 
     def initialize_game(self):
         """Initialize/reset the game (called when starting a new game)"""
-        # Stop menu music when game starts
+        # Stop menu music and start in-game music
         self.sound_manager.stop_music()
+        self.sound_manager.play_ingame_music()
         
         # Treasure & Exit system
         self.has_treasure = False
@@ -527,7 +528,8 @@ class Game:
                     elif self.game_state == GameState.PLAYING:
                         if event.key == pygame.K_ESCAPE:
                             self.game_state = GameState.MAIN_MENU
-                            # Restart menu music when returning to main menu
+                            # Stop in-game music and restart menu music when returning to main menu
+                            self.sound_manager.stop_music()
                             self.sound_manager.play_menu_music()
                         elif event.key == pygame.K_r:
                             # Restart the game
@@ -548,7 +550,8 @@ class Game:
                         elif event.key == pygame.K_ESCAPE:
                             self.sound_manager.stop_all_sounds()
                             self.game_state = GameState.MAIN_MENU
-                            # Restart menu music when returning to main menu
+                            # Stop in-game music and restart menu music when returning to main menu
+                            self.sound_manager.stop_music()
                             self.sound_manager.play_menu_music()
 
             # Update game logic based on state
