@@ -226,41 +226,80 @@ class Game:
             print(f"[Wumpus {i+1}/{wumpus_count}] Spawned at ({spawn_x}, {spawn_y})")
 
     def spawn_treasure(self):
-        """Spawn treasure collectible"""
-        from sprites import Treasure
-
-        # Look for 'Treasure' object layer in TMX
+        """Spawn treasure chest system (1 real, 2 mimics) using Prolog"""
+        from sprites import TreasureChest
+        
+        # Find 3 spawn positions for chests
+        chest_positions = []
+        
+        # Look for treasure spawn points in TMX
         for layer in self.tmx_map.layers:
             if (
                 type(layer).__name__ == "TiledObjectGroup"
                 and "treasure" in layer.name.lower()
             ):
-                if len(layer) > 0:
-                    obj = layer[0]  # Take first treasure
-                    treasure_x = (obj.x * self.map_scale) + (
-                        obj.width * self.map_scale // 2
-                    )
-                    treasure_y = (obj.y * self.map_scale) + (
-                        obj.height * self.map_scale // 2
-                    )
-                    treasure = Treasure(
-                        (treasure_x, treasure_y),
-                        [self.all_sprites, self.treasure_sprites],
-                    )
-                    print(f"Spawned treasure at ({treasure_x}, {treasure_y})")
-                    return
-
-        # Fallback: spawn treasure deep in cave (opposite corner from entrance)
-        fallback_x = (
-            self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
-        ) - 300
-        fallback_y = (
-            self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
-        ) - 300
-        treasure = Treasure(
-            (fallback_x, fallback_y), [self.all_sprites, self.treasure_sprites]
-        )
-        print(f"No treasure spawn found, using fallback: ({fallback_x}, {fallback_y})")
+                for obj in layer:
+                    chest_x = (obj.x * self.map_scale) + (obj.width * self.map_scale // 2)
+                    chest_y = (obj.y * self.map_scale) + (obj.height * self.map_scale // 2)
+                    chest_positions.append((chest_x, chest_y))
+                    if len(chest_positions) >= 3:
+                        break
+        
+        # Fallback: generate 3 positions in different areas
+        if len(chest_positions) < 3:
+            map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
+            map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
+            
+            fallback_positions = [
+                (map_width * 0.75, map_height * 0.25),  # Top-right
+                (map_width * 0.75, map_height * 0.75),  # Bottom-right
+                (map_width * 0.25, map_height * 0.75),  # Bottom-left
+            ]
+            
+            while len(chest_positions) < 3:
+                chest_positions.append(fallback_positions[len(chest_positions)])
+        
+        # Take first 3 positions
+        chest_positions = chest_positions[:3]
+        
+        # Setup treasure system in Prolog (randomly assigns 1 real, 2 mimics)
+        if self.prolog and self.prolog.available:
+            self.prolog.setup_treasure_system(
+                chest_positions[0],
+                chest_positions[1],
+                chest_positions[2]
+            )
+            
+            # Get chest info from Prolog to create sprites
+            chests = self.prolog.get_all_chests()
+            
+            for chest in chests:
+                is_mimic = chest['type'] == 'mimic'
+                chest_sprite = TreasureChest(
+                    (chest['x'], chest['y']),
+                    [self.all_sprites, self.treasure_sprites],
+                    chest['id'],
+                    is_mimic=is_mimic,
+                    prolog_engine=self.prolog
+                )
+                chest_type = "MIMIC" if is_mimic else "REAL"
+                print(f"[Chest {chest['id']}] Spawned at ({chest['x']:.0f}, {chest['y']:.0f}) - Type: {chest_type}")
+        else:
+            # Fallback without Prolog - just spawn 3 random chests
+            import random
+            real_chest = random.randint(0, 2)
+            
+            for i, pos in enumerate(chest_positions):
+                is_mimic = (i != real_chest)
+                chest_sprite = TreasureChest(
+                    pos,
+                    [self.all_sprites, self.treasure_sprites],
+                    i + 1,
+                    is_mimic=is_mimic,
+                    prolog_engine=None
+                )
+                chest_type = "MIMIC" if is_mimic else "REAL"
+                print(f"[Chest {i+1}] Spawned at {pos} - Type: {chest_type}")
 
     def spawn_exit(self):
         """Spawn exit portal at entrance"""
@@ -427,27 +466,64 @@ class Game:
         return False
 
     def check_treasure_collection(self):
-        """Check if player collects treasure"""
+        """Check if player opens treasure chests (press E near chest)"""
         if not self.has_treasure and len(self.treasure_sprites) > 0:
-            # Check collision between player and treasure
-            treasure = self.treasure_sprites.sprites()[0]
-            player_rect = self.player.hitbox_rect
-            treasure_rect = treasure.hitbox_rect
-
-            if player_rect.colliderect(treasure_rect):
-                self.has_treasure = True
-                treasure.collect()
-
-                # Unlock exit
-                if len(self.exit_sprites) > 0:
-                    exit_portal = self.exit_sprites.sprites()[0]
-                    exit_portal.unlock()
-                    self.exit_unlocked = True
-
-                # Enrage all Wumpus (50% speed boost)
-                for wumpus in self.wumpus_sprites:
-                    wumpus.speed *= 1.5
-                print("[Game] Treasure collected! All Wumpus are enraged! Find the exit!")
+            # Check if player presses E near any chest
+            keys = pygame.key.get_pressed()
+            
+            for chest in self.treasure_sprites:
+                player_rect = self.player.hitbox_rect
+                chest_rect = chest.hitbox_rect
+                
+                # Check distance to chest
+                player_center = pygame.math.Vector2(player_rect.center)
+                chest_center = pygame.math.Vector2(chest_rect.center)
+                distance = player_center.distance_to(chest_center)
+                
+                # Player near chest and presses E
+                if distance < 60 and keys[pygame.K_e]:
+                    result = chest.open(self)
+                    
+                    if result == 'treasure':
+                        # Real treasure found!
+                        self.has_treasure = True
+                        
+                        # Unlock exit
+                        if len(self.exit_sprites) > 0:
+                            exit_portal = self.exit_sprites.sprites()[0]
+                            exit_portal.unlock()
+                            self.exit_unlocked = True
+                        
+                        # Enrage all Wumpus
+                        for wumpus in self.wumpus_sprites:
+                            wumpus.speed *= 1.5
+                        
+                        print("[Game] Real treasure found! Wumpus enraged! Find exit!")
+                        
+                        # Update Prolog
+                        if self.prolog and self.prolog.available:
+                            self.prolog.collect_treasure()
+                        
+                    elif result == 'mimic':
+                        # Mimic! Spawn new Wumpus
+                        print("[Game] MIMIC ACTIVATED! Additional Wumpus spawned!")
+                        
+                        # Spawn Wumpus at mimic location
+                        from wumpus import Wumpus
+                        mimic_pos = chest.pos
+                        new_wumpus = Wumpus(
+                            (mimic_pos.x, mimic_pos.y),
+                            [self.all_sprites, self.wumpus_sprites],
+                            self.collision_sprites,
+                            self.prolog,
+                            self.map_knowledge,
+                            self.sound_manager
+                        )
+                        print(f"[Mimic] Spawned Wumpus at ({mimic_pos.x:.0f}, {mimic_pos.y:.0f})")
+                    
+                    # Prevent multiple opens in one frame
+                    pygame.time.wait(200)
+                    break
 
     def check_exit_reached(self):
         """Check if player reaches unlocked exit"""
@@ -919,6 +995,36 @@ class Game:
                     exit_color = (0, 255, 0) if self.exit_unlocked else (150, 150, 150)
                     exit_text = font.render(exit_status, True, exit_color)
                     self.screen.blit(exit_text, (20, 100))
+
+                # Chest interaction hint (center bottom)
+                if hasattr(self, 'player') and self.player and hasattr(self, 'treasure_sprites'):
+                    player_center = pygame.math.Vector2(
+                        self.player.hitbox_rect.centerx, self.player.hitbox_rect.centery
+                    )
+                    
+                    # Check if player is near any unopened chest
+                    near_chest = False
+                    for chest in self.treasure_sprites:
+                        if hasattr(chest, 'opened') and not chest.opened:
+                            chest_center = pygame.math.Vector2(
+                                chest.rect.centerx, chest.rect.centery
+                            )
+                            distance = player_center.distance_to(chest_center)
+                            
+                            if distance < 60:
+                                near_chest = True
+                                break
+                    
+                    # Display hint if near unopened chest
+                    if near_chest:
+                        hint_text = font.render("Press [E] to open chest", True, (255, 255, 100))
+                        hint_rect = hint_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 40))
+                        # Draw semi-transparent background
+                        bg_rect = hint_rect.inflate(20, 10)
+                        bg_surface = pygame.Surface(bg_rect.size, pygame.SRCALPHA)
+                        bg_surface.fill((0, 0, 0, 180))
+                        self.screen.blit(bg_surface, bg_rect.topleft)
+                        self.screen.blit(hint_text, hint_rect)
 
             # Draw game state screens
             if self.game_state == GameState.VICTORY:

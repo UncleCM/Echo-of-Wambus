@@ -245,4 +245,103 @@ calculate_direction(WX, WY, PX, PY, DX, DY) :-
         % Same position - no direction
         DX = 0,
         DY = 0
-    ). 
+    ).
+
+% ============================================================================
+% TREASURE & MIMIC SYSTEM
+% ============================================================================
+
+:- dynamic treasure/3.        % treasure(ID, X, Y)
+:- dynamic mimic/4.            % mimic(ID, X, Y, Activated)
+:- dynamic treasure_collected/1.
+:- dynamic next_wumpus_id/1.
+
+% Setup 3 chests - 1 real treasure, 2 mimics (randomly assigned)
+setup_treasure_system(X1, Y1, X2, Y2, X3, Y3) :-
+    % Clear existing treasure/mimic data
+    retractall(treasure(_, _, _)),
+    retractall(mimic(_, _, _, _)),
+    retractall(treasure_collected(_)),
+    
+    % Randomly assign which chest is the real treasure (1, 2, or 3)
+    random_between(1, 3, TreasureChestID),
+    
+    % Create chests based on random assignment
+    setup_chest(1, X1, Y1, TreasureChestID),
+    setup_chest(2, X2, Y2, TreasureChestID),
+    setup_chest(3, X3, Y3, TreasureChestID),
+    
+    asserta(treasure_collected(false)).
+
+% Helper to create either treasure or mimic
+setup_chest(ID, X, Y, TreasureID) :-
+    (ID =:= TreasureID ->
+        assertz(treasure(ID, X, Y))
+    ;
+        assertz(mimic(ID, X, Y, false))
+    ).
+
+% Open chest near player position (within 50 pixels)
+open_chest(PlayerX, PlayerY, Result) :-
+    % Try to find a treasure chest
+    (treasure(_ID, ChestX, ChestY),
+     distance_to_chest(PlayerX, PlayerY, ChestX, ChestY, Dist),
+     Dist =< 50 ->
+        Result = treasure_found
+    ;
+    % Try to find a mimic chest
+     mimic(ID, ChestX, ChestY, Activated),
+     distance_to_chest(PlayerX, PlayerY, ChestX, ChestY, Dist),
+     Dist =< 50 ->
+        (Activated = false ->
+            % Activate the mimic
+            retract(mimic(ID, ChestX, ChestY, false)),
+            assertz(mimic(ID, ChestX, ChestY, true)),
+            Result = mimic_activated
+        ;
+            Result = already_opened
+        )
+    ;
+        Result = no_chest
+    ).
+
+% Calculate distance to chest
+distance_to_chest(PlayerX, PlayerY, ChestX, ChestY, Distance) :-
+    DX is ChestX - PlayerX,
+    DY is ChestY - PlayerY,
+    Distance is sqrt(DX * DX + DY * DY).
+
+% Mark treasure as collected
+collect_treasure :-
+    retractall(treasure_collected(_)),
+    assertz(treasure_collected(true)).
+
+% ============================================================================
+% WUMPUS SPAWNING SYSTEM
+% ============================================================================
+
+:- dynamic spawned_wumpus/3.  % spawned_wumpus(ID, X, Y)
+
+% Initialize Wumpus ID counter
+init_wumpus_system :-
+    retractall(next_wumpus_id(_)),
+    assertz(next_wumpus_id(1)).
+
+% Spawn a new Wumpus and return its ID
+spawn_wumpus(X, Y, WumpusID) :-
+    % Get next ID
+    (next_wumpus_id(ID) ->
+        WumpusID = ID
+    ;
+        % If counter doesn't exist, initialize it
+        init_wumpus_system,
+        WumpusID = 1
+    ),
+    
+    % Store the spawned Wumpus
+    assertz(spawned_wumpus(WumpusID, X, Y)),
+    
+    % Increment counter
+    NextID is WumpusID + 1,
+    retractall(next_wumpus_id(_)),
+    assertz(next_wumpus_id(NextID)).
