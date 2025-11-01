@@ -521,6 +521,7 @@ class Game:
                             self.game_state = GameState.MAIN_MENU
                         elif event.key == pygame.K_r:
                             # Restart the game
+                            self.sound_manager.stop_all_sounds()
                             self.initialize_game()
                         elif event.key == pygame.K_f:
                             self.debug_mode = not self.debug_mode
@@ -531,8 +532,11 @@ class Game:
                     # Game over / Victory screens
                     else:
                         if event.key == pygame.K_r:
+                            # Stop game_over sound before restarting
+                            self.sound_manager.stop_all_sounds()
                             self.initialize_game()
                         elif event.key == pygame.K_ESCAPE:
+                            self.sound_manager.stop_all_sounds()
                             self.game_state = GameState.MAIN_MENU
 
             # Update game logic based on state
