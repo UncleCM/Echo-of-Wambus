@@ -1,5 +1,6 @@
 import pygame
 import os
+import numpy as np
 
 
 class SoundManager:
@@ -13,6 +14,31 @@ class SoundManager:
         self.music_volume = 0.5
         self.footstep_channel = None  # Dedicated channel for footstep looping
         self.load_sounds()
+
+    def speed_up_sound(self, sound, speed_factor=1.5):
+        try:
+            # Get the sound array
+            sound_array = pygame.sndarray.array(sound)
+
+            # Calculate new length
+            original_length = len(sound_array)
+            new_length = int(original_length / speed_factor)
+
+            # Resample the audio (simple downsampling)
+            if len(sound_array.shape) == 2:  # Stereo
+                # Resample both channels
+                indices = np.linspace(0, original_length - 1, new_length).astype(int)
+                new_array = sound_array[indices]
+            else:  # Mono
+                indices = np.linspace(0, original_length - 1, new_length).astype(int)
+                new_array = sound_array[indices]
+
+            # Create new sound from array
+            return pygame.sndarray.make_sound(new_array)
+        except:
+            # If speed adjustment fails, return original sound
+            print(f"[SoundManager] Could not speed up sound, using original")
+            return sound
 
     def load_sounds(self):
         """Load all sound files from assets/sounds/"""
@@ -30,7 +56,15 @@ class SoundManager:
             filepath = os.path.join(sound_dir, filename)
             if os.path.exists(filepath):
                 try:
-                    self.sounds[name] = pygame.mixer.Sound(filepath)
+                    loaded_sound = pygame.mixer.Sound(filepath)
+
+                    # Speed up footstep sound for faster walking rhythm
+                    if name == "footstep":
+                        loaded_sound = self.speed_up_sound(
+                            loaded_sound, speed_factor=1.6
+                        )
+
+                    self.sounds[name] = loaded_sound
                     print(f"[SoundManager] Loaded sound: {name}")
                 except pygame.error as e:
                     print(f"[SoundManager] Failed to load {name}: {e}")

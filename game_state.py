@@ -2,6 +2,7 @@
 Game State Management
 Defines all possible game states
 """
+
 from enum import Enum
 
 

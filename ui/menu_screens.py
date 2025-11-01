@@ -2,6 +2,7 @@
 Menu and UI Screens for Echo of Wumpus
 Handles all menu rendering and UI screens
 """
+
 import pygame
 from Settings import WINDOW_WIDTH, WINDOW_HEIGHT
 
@@ -29,7 +30,7 @@ class MenuScreens:
     def __init__(self, screen):
         """
         Initialize menu screens handler
-        
+
         Args:
             screen: Pygame surface to render on
         """
@@ -38,7 +39,7 @@ class MenuScreens:
     def draw_main_menu(self, menu_selection, menu_options):
         """
         Draw the main menu screen
-        
+
         Args:
             menu_selection: Currently selected menu index
             menu_options: List of menu option strings
@@ -168,7 +169,7 @@ class MenuScreens:
     def draw_victory_screen(self, game_stats):
         """
         Draw victory screen with stats
-        
+
         Args:
             game_stats: Dictionary with keys: 'elapsed_time', 'player_health', 'player_max_health'
         """
@@ -178,7 +179,7 @@ class MenuScreens:
         self.screen.blit(overlay, (0, 0))
 
         # Calculate game stats
-        elapsed_time = game_stats.get('elapsed_time', 0)
+        elapsed_time = game_stats.get("elapsed_time", 0)
         minutes = int(elapsed_time // 60)
         seconds = int(elapsed_time % 60)
 
@@ -210,8 +211,8 @@ class MenuScreens:
         )
         self.screen.blit(time_text, time_rect)
 
-        player_health = game_stats.get('player_health', 0)
-        player_max_health = game_stats.get('player_max_health', 100)
+        player_health = game_stats.get("player_health", 0)
+        player_max_health = game_stats.get("player_max_health", 100)
         health_text = font.render(
             f"Health Remaining: {player_health}/{player_max_health}",
             True,
@@ -232,7 +233,7 @@ class MenuScreens:
     def draw_game_over_screen(self, game_stats):
         """
         Draw game over screen
-        
+
         Args:
             game_stats: Dictionary with keys: 'elapsed_time', 'death_reason'
         """
@@ -242,7 +243,7 @@ class MenuScreens:
         self.screen.blit(overlay, (0, 0))
 
         # Calculate game stats
-        elapsed_time = game_stats.get('elapsed_time', 0)
+        elapsed_time = game_stats.get("elapsed_time", 0)
         minutes = int(elapsed_time // 60)
         seconds = int(elapsed_time % 60)
 
@@ -259,7 +260,7 @@ class MenuScreens:
         self.screen.blit(title_text, title_rect)
 
         # Death message
-        death_reason = game_stats.get('death_reason', 'You died!')
+        death_reason = game_stats.get("death_reason", "You died!")
         death_text = font.render(death_reason, True, (255, 100, 100))
         death_rect = death_text.get_rect(
             center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50)

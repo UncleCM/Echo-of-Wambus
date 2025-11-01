@@ -870,9 +870,9 @@ class Game:
         """Draw victory screen with stats"""
         elapsed_time = (self.game_end_time - self.game_start_time) / 1000.0
         game_stats = {
-            'elapsed_time': elapsed_time,
-            'player_health': self.player.health,
-            'player_max_health': self.player.max_health,
+            "elapsed_time": elapsed_time,
+            "player_health": self.player.health,
+            "player_max_health": self.player.max_health,
         }
         self.menu_screens.draw_victory_screen(game_stats)
 
@@ -880,8 +880,8 @@ class Game:
         """Draw game over screen"""
         elapsed_time = (self.game_end_time - self.game_start_time) / 1000.0
         game_stats = {
-            'elapsed_time': elapsed_time,
-            'death_reason': self.death_reason if self.death_reason else "You died!",
+            "elapsed_time": elapsed_time,
+            "death_reason": self.death_reason if self.death_reason else "You died!",
         }
         self.menu_screens.draw_game_over_screen(game_stats)
 
