@@ -318,7 +318,10 @@ class Game:
 
     def check_game_over(self):
         """Check if player fell into a fall zone using Prolog"""
-        if pygame.time.get_ticks() - self.game_start_time < GameplayConfig.SPAWN_PROTECTION_MS:
+        if (
+            pygame.time.get_ticks() - self.game_start_time
+            < GameplayConfig.SPAWN_PROTECTION_MS
+        ):
             return False
 
         if self.game_state == GameState.PLAYING:
@@ -469,12 +472,9 @@ class Game:
         """Render the lighting system (flashlight and darkness)."""
         player_screen_pos = self.player.rect.center - self.all_sprites.offset
         player_world_pos = self.player.rect.center
-        
+
         self.lighting_system.render(
-            self.screen,
-            player_screen_pos,
-            player_world_pos,
-            self.player.facing
+            self.screen, player_screen_pos, player_world_pos, self.player.facing
         )
 
     def run(self):
@@ -519,6 +519,9 @@ class Game:
                     elif self.game_state == GameState.PLAYING:
                         if event.key == pygame.K_ESCAPE:
                             self.game_state = GameState.MAIN_MENU
+                        elif event.key == pygame.K_r:
+                            # Restart the game
+                            self.initialize_game()
                         elif event.key == pygame.K_f:
                             self.debug_mode = not self.debug_mode
                             print(f"Debug mode: {self.debug_mode}")
