@@ -22,6 +22,12 @@ class Player(Entity):
         self.is_attacking = False  # Currently shooting (prevents movement)
         self.attack_duration = 0.3  # Time player is frozen during shoot animation
 
+        # Rock throwing system
+        self.rocks = 0  # Current rock count
+        self.max_rocks = MAX_ROCKS  # Maximum rocks can carry
+        self.throw_cooldown = ROCK_THROW_COOLDOWN / 1000.0  # Convert ms to seconds
+        self.last_throw_time = 0  # Time since last throw
+
         # Load player animations
         self.animations = self.load_animations()
 
@@ -35,6 +41,11 @@ class Player(Entity):
         self.setup_sprite(initial_image, hitbox_inflate=(-75, -75))
 
         print(f"First frame size: {self.image.get_size()}")
+    
+    @property
+    def pos(self):
+        """Get current position as Vector2 (for compatibility with sound system)"""
+        return pygame.math.Vector2(self.hitbox_rect.center)
 
         # ... rest of the load_animations, load_sprite_strip, input, and animate methods stay the same ...
 
@@ -116,6 +127,9 @@ class Player(Entity):
             self.direction.x = -1
         elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.direction.x = 1
+        
+        # Check if dashing (Shift key)
+        self.is_dashing = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
 
         # Update facing based on direction (supports 8 directions)
         if self.direction.x != 0 or self.direction.y != 0:
@@ -204,6 +218,73 @@ class Player(Entity):
         """Deprecated - replaced by shoot_arrow()"""
         pass
 
+    def throw_rock(self, sound_manager):
+        """
+        Throw a rock in the direction player is facing (keyboard-based)
+        
+        Args:
+            sound_manager: SoundManager instance for emitting throw sound
+            
+        Returns:
+            Vector2: direction to throw rock, or None if can't throw
+        """
+        # Check if can throw
+        if self.rocks <= 0:
+            print("[Player] No rocks left!")
+            return None
+        
+        current_time = pygame.time.get_ticks() / 1000.0  # Convert to seconds
+        time_since_throw = current_time - self.last_throw_time
+        
+        if time_since_throw < self.throw_cooldown:
+            print(f"[Player] Throw on cooldown! Wait {self.throw_cooldown - time_since_throw:.1f}s")
+            return None
+        
+        # Calculate direction from facing direction (same as arrow system)
+        facing_vectors = {
+            "up": pygame.math.Vector2(0, -1),
+            "down": pygame.math.Vector2(0, 1),
+            "left": pygame.math.Vector2(-1, 0),
+            "right": pygame.math.Vector2(1, 0),
+            "left_up": pygame.math.Vector2(-1, -1).normalize(),
+            "left_down": pygame.math.Vector2(-1, 1).normalize(),
+            "right_up": pygame.math.Vector2(1, -1).normalize(),
+            "right_down": pygame.math.Vector2(1, 1).normalize(),
+        }
+        
+        direction = facing_vectors.get(self.facing, pygame.math.Vector2(0, 1))
+        
+        if direction.length() == 0:
+            return None
+        
+        direction = direction.normalize()
+        
+        # Emit throw sound
+        from Settings import SOUND_LEVELS, SOUND_DURATIONS
+        sound_manager.emit_sound(
+            self.pos,
+            SOUND_LEVELS['rock_throw'],
+            SOUND_DURATIONS['rock_throw'],
+            'rock_throw'
+        )
+        
+        # Consume rock
+        self.rocks -= 1
+        self.last_throw_time = current_time
+        
+        print(f"[Player] Threw rock! Rocks remaining: {self.rocks}/{self.max_rocks}")
+        return direction
+    
+    def add_rocks(self, amount=1):
+        """Pick up rocks from RockPickup"""
+        if self.rocks < self.max_rocks:
+            self.rocks = min(self.rocks + amount, self.max_rocks)
+            print(f"[Player] Picked up {amount} rock(s)! Total: {self.rocks}/{self.max_rocks}")
+            return True
+        else:
+            print(f"[Player] Rock capacity full! ({self.max_rocks}/{self.max_rocks})")
+            return False
+
     def animate(self, dt):
         """Update animation frames"""
         # Determine animation state based on movement
@@ -270,14 +351,39 @@ class Player(Entity):
         # Update image
         self.image = animation_frames[frame_index]
 
-    def update(self, dt):
+    def update(self, dt, sound_manager=None):
         """Update player every frame"""
         # Update attack cooldown timer
         if self.attack_timer > 0:
             self.attack_timer -= dt
 
         self.input()
-        self.move(dt)
+        
+        # Apply speed modifier for dashing
+        current_speed = self.speed * 2.0 if self.is_dashing else self.speed
+        
+        # Emit movement sounds (if sound_manager provided)
+        if sound_manager and self.direction.length() > 0:
+            from Settings import SOUND_LEVELS, SOUND_DURATIONS
+            
+            if self.is_dashing:
+                sound_manager.emit_sound(
+                    self.pos,
+                    SOUND_LEVELS['dash'],
+                    SOUND_DURATIONS['dash'],
+                    'dash'
+                )
+            else:
+                # Walking sound
+                sound_manager.emit_sound(
+                    self.pos,
+                    SOUND_LEVELS['walk'],
+                    SOUND_DURATIONS['walk'],
+                    'walk'
+                )
+        
+        # Use modified speed for movement
+        self.move(dt, speed_override=current_speed)
         self.animate(dt)
 
         # Check if attack animation finished

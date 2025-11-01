@@ -5,6 +5,8 @@ from sprites import *
 from groups import AllSprites
 from pytmx.util_pygame import load_pygame
 from prolog_interface import PrologEngine
+from sound_system import SoundManager
+from map_knowledge import MapKnowledge
 
 from random import randint
 import math
@@ -51,8 +53,20 @@ class Game:
         self.exit_sprites = pygame.sprite.Group()
         self.arrow_sprites = pygame.sprite.Group()  # Flying arrows
         self.arrow_pickup_sprites = pygame.sprite.Group()  # Arrow pickups to collect
+        self.rock_sprites = pygame.sprite.Group()  # Flying rocks
+        self.rock_pickup_sprites = pygame.sprite.Group()  # Rock pickups to collect
+        
+        # Sound system for stealth gameplay
+        self.sound_manager = SoundManager()
 
         self.setup()
+        
+        # Map knowledge system (after setup to load tmx_map first)
+        self.map_knowledge = MapKnowledge(
+            self.tmx_map, 
+            self.collision_sprites, 
+            self.fall_sprites
+        )
 
         spawn_pos = self.find_spawn_position()
         # Create player and give it a reference to the Prolog engine (single instance)
@@ -60,31 +74,27 @@ class Game:
             spawn_pos, self.all_sprites, self.collision_sprites, self.prolog
         )
 
-        # Create Wumpus enemy
+        # Create Wumpus enemy with new sound-based AI
         wumpus_pos = self.find_wumpus_spawn()
         self.wumpus = Wumpus(
             wumpus_pos,
             [self.all_sprites, self.wumpus_sprites],
             self.collision_sprites,
             self.prolog,
+            self.map_knowledge,  # NEW: map awareness
+            self.sound_manager   # NEW: sound detection
         )
-        # Set patrol points for Wumpus
-        self.wumpus.patrol_points = [
-            wumpus_pos,
-            (wumpus_pos[0] + 200, wumpus_pos[1]),
-            (wumpus_pos[0] + 200, wumpus_pos[1] + 200),
-            (wumpus_pos[0], wumpus_pos[1] + 200),
-        ]
 
         # Update Prolog with player position (use hitbox for accuracy)
         self.prolog.update_player_position(
             int(self.player.hitbox_rect.x), int(self.player.hitbox_rect.y)
         )
 
-        # Spawn treasure, exit, and arrow pickups
+        # Spawn treasure, exit, and pickups
         self.spawn_treasure()
         self.spawn_exit()
         self.spawn_arrow_pickups()
+        self.spawn_rock_pickups()  # NEW: spawn rocks for distraction
 
         # Flashlight and darkness setup
         self.flashlight_on = True
@@ -259,6 +269,43 @@ class Game:
             pickup = ArrowPickup(pos, [self.all_sprites, self.arrow_pickup_sprites])
             pickup_count += 1
             print(f"No arrow spawn found, using fallback {pickup_count}: {pos}")
+    
+    def spawn_rock_pickups(self):
+        """Spawn rock pickups on the map from TMX 'rock' layer"""
+        pickup_count = 0
+        
+        # Try to load from TMX 'rock' object layer
+        for layer in self.tmx_map.layers:
+            if hasattr(layer, 'name') and layer.name == 'rock':
+                if len(layer) > 0:
+                    for obj in layer:
+                        # Scale position
+                        pos = (
+                            obj.x * self.map_scale,
+                            obj.y * self.map_scale
+                        )
+                        pickup = RockPickup(pos, [self.all_sprites, self.rock_pickup_sprites])
+                        pickup_count += 1
+                        print(f"Rock pickup {pickup_count} at: {pos}")
+                    return
+        
+        # Fallback: spawn 5 rock pickups at predefined locations
+        print("No 'rock' layer found, using fallback positions")
+        map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
+        map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
+        
+        fallback_positions = [
+            (map_width // 3, map_height // 4),
+            (map_width // 2, map_height // 2),
+            (map_width * 2 // 3, map_height // 3),
+            (map_width // 4, map_height * 3 // 4),
+            (map_width * 3 // 4, map_height * 2 // 3),
+        ]
+        
+        for i, pos in enumerate(fallback_positions[:ROCK_PICKUP_COUNT]):
+            pickup = RockPickup(pos, [self.all_sprites, self.rock_pickup_sprites])
+            pickup_count += 1
+            print(f"Rock pickup {pickup_count} (fallback) at: {pos}")
 
     def setup(self):
         self.tmx_map = load_pygame(join("assets", "Map", "test_wall_size.tmx"))
@@ -416,6 +463,36 @@ class Game:
                     print(
                         f"[Pickup] Collected arrow pickup! Total arrows: {self.player.arrows}/{self.player.max_arrows}"
                     )
+    
+    def handle_rock_throw(self):
+        """Handle player throwing rock (E key pressed - keyboard only)"""
+        if not self.player.is_alive or self.player.rocks <= 0:
+            return
+        
+        # Try to throw rock in facing direction
+        rock_direction = self.player.throw_rock(self.sound_manager)
+        
+        if rock_direction is not None:
+            # Create rock sprite
+            rock_pos = self.player.hitbox_rect.center
+            rock = Rock(
+                rock_pos,
+                rock_direction,
+                ROCK_THROW_POWER,
+                [self.all_sprites, self.rock_sprites],
+                self.collision_sprites
+            )
+            print(f"[Rock] Threw rock in direction: {rock_direction}")
+    
+    def check_rock_pickups(self):
+        """Check if player collects rock pickups"""
+        for pickup in self.rock_pickup_sprites:
+            if self.player.hitbox_rect.colliderect(pickup.hitbox_rect):
+                # Add rocks to player
+                self.player.add_rocks(ROCK_PICKUP_COUNT)
+                # Remove pickup
+                pickup.kill()
+                print(f"[Pickup] Collected rocks! Total: {self.player.rocks}/{self.player.max_rocks}")
 
     def check_player_attack(self):
         """DEPRECATED - Player now uses arrow combat system instead of melee"""
@@ -554,6 +631,13 @@ class Game:
                         and self.game_state == GameState.PLAYING
                     ):
                         self.handle_arrow_shooting()
+                    
+                    # Rock throwing (E key - keyboard only!)
+                    if (
+                        event.key == pygame.K_e
+                        and self.game_state == GameState.PLAYING
+                    ):
+                        self.handle_rock_throw()
 
             if self.game_state == GameState.PLAYING:
                 # Update time remaining
@@ -571,6 +655,9 @@ class Game:
                     print("GAME OVER - Time's up!")
                 else:
                     # Only update game if time hasn't run out
+                    # Update sound system
+                    self.sound_manager.update()
+                    
                     # Update Wumpus AI first (before sprite group update)
                     if self.wumpus.is_alive:
                         player_center = pygame.math.Vector2(
@@ -578,13 +665,24 @@ class Game:
                         )
                         self.wumpus.ai_update(player_center, dt)
 
-                    # Update all sprites (Player, Wumpus, Arrows movement/animation)
-                    self.all_sprites.update(dt)
-                    self.arrow_sprites.update(dt)  # Update flying arrows
+                    # Update all sprites - but Player needs sound_manager now
+                    # NOTE: We can't pass dt + sound_manager to all_sprites.update()
+                    # So we need to update player separately
+                    for sprite in self.all_sprites:
+                        if sprite == self.player:
+                            sprite.update(dt, self.sound_manager)  # Player with sound
+                        else:
+                            sprite.update(dt)  # Others normal
+                    
+                    # Update projectiles
+                    self.arrow_sprites.update(dt)  # Arrows
+                    for rock in self.rock_sprites:
+                        rock.update(dt, self.sound_manager)  # Rocks with sound
 
-                    # Check arrow collisions
+                    # Check collisions
                     self.check_arrow_hits()
                     self.check_arrow_pickups()
+                    self.check_rock_pickups()  # NEW: rock pickup collection
 
                     # Check Wumpus attack hit Player (only if not stunned)
                     if (
@@ -633,24 +731,29 @@ class Game:
                     wumpus_hitbox.topleft -= offset
                     pygame.draw.rect(self.screen, (255, 0, 255), wumpus_hitbox, 2)
 
-                    # Detection range circle
+                    # Hearing range circle (sound-based detection)
                     wumpus_center = self.wumpus.hitbox_rect.center
                     screen_center = (
                         int(wumpus_center[0] - offset.x),
                         int(wumpus_center[1] - offset.y),
                     )
+                    
+                    # Draw hearing radius (changes color when roaring)
+                    hearing_color = (255, 50, 50) if self.wumpus.is_roaring else (100, 100, 255)
                     pygame.draw.circle(
                         self.screen,
-                        (255, 100, 100),
+                        hearing_color,
                         screen_center,
-                        self.wumpus.detection_range,
-                        1,
+                        self.wumpus.current_hearing_radius,
+                        2,
                     )
 
                     # AI state text
                     font = pygame.font.Font(None, 24)
                     state_text = font.render(
-                        f"AI: {self.wumpus.ai_state}", True, (255, 255, 255)
+                        f"AI: {self.wumpus.ai_state.name if hasattr(self.wumpus.ai_state, 'name') else self.wumpus.ai_state}", 
+                        True, 
+                        (255, 255, 255)
                     )
                     self.screen.blit(
                         state_text, (screen_center[0] - 40, screen_center[1] - 100)

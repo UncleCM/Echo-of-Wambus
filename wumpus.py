@@ -2,14 +2,28 @@ from Settings import *
 from entity import Entity
 
 
-class Wumpus(Entity):
-    """Wumpus enemy - AI-controlled entity that patrols and chases player"""
+class WumpusAIState:
+    """AI state constants for Wumpus"""
+    ROAMING = "roaming"          # Exploring map randomly
+    INVESTIGATING = "investigating"  # Moving to sound source
+    CHASING = "chasing"          # Actively pursuing detected sound
+    SEARCHING = "searching"      # Lost player, searching area
+    STUNNED = "stunned"          # Hit by arrow
+    DEAD = "dead"                # Defeated
 
-    def __init__(self, pos, groups, collision_sprites, prolog_engine=None):
+
+class Wumpus(Entity):
+    """Wumpus enemy - Sound-based AI hunter with complete map knowledge"""
+
+    def __init__(self, pos, groups, collision_sprites, prolog_engine=None, map_knowledge=None, sound_manager=None):
         # Initialize base Entity
         super().__init__(
             pos, groups, collision_sprites, prolog_engine, entity_type="wumpus"
         )
+
+        # Core systems
+        self.map_knowledge = map_knowledge  # Complete map awareness
+        self.sound_manager = sound_manager  # Sound detection system
 
         # Wumpus-specific attributes
         self.speed = 150  # Slower than player (200)
@@ -17,41 +31,51 @@ class Wumpus(Entity):
         self.max_health = 150  # More HP than player
         self.health = self.max_health
 
-        # Combat ranges
+        # Combat ranges (REMOVED vision detection)
         self.attack_range = 50  # Pixels within which Wumpus can attack
-        self.detection_range = 300  # Pixels within which Wumpus detects player
+
+        # Hearing system (replaces vision)
+        self.hearing_radius = WUMPUS_BASE_HEARING  # Base hearing (200px)
+        self.chase_hearing_bonus = WUMPUS_CHASE_BONUS  # Bonus when chasing (+150px)
+        self.current_hearing_radius = self.hearing_radius
 
         # Stun mechanics (arrow combat)
         self.is_stunned = False
         self.stun_timer = 0
         self.stun_duration = ARROW_STUN_DURATION  # From Settings.py
 
-        # AI state
-        self.ai_state = "patrol"  # 'patrol', 'chase', 'attack', 'stunned', 'dead'
-        self.patrol_points = []  # Will be set by map/AI
-        self.current_patrol_index = 0
+        # Sound-based AI state
+        self.ai_state = WumpusAIState.ROAMING
+        self.target_position = None  # Where Wumpus is heading
+        self.last_heard_sound = None  # Last detected sound
+        self.roaming_target = None  # Current roaming destination
+        self.search_timer = 0  # Time left searching
+
+        # Roar system
+        self.is_roaring = False
+        self.roar_cooldown = WUMPUS_ROAR_COOLDOWN  # 5000ms
+        self.last_roar_time = 0
 
         # Load Wumpus animations
         self.animations = self.load_animations()
 
-        print(f"Loaded {len(self.animations)} animation states")
+        print(f"[Wumpus] Loaded {len(self.animations)} animation states")
         for anim_name, frames in self.animations.items():
             print(f"  {anim_name}: {len(frames)} frames")
 
         # Setup sprite and hitbox
         self.current_animation = "idle"
         initial_image = self.animations[self.current_animation][0]
-        # Tighter hitbox that fits the Wumpus body better
-        # Negative values make hitbox smaller than sprite
         self.setup_sprite(initial_image, hitbox_inflate=(-80, -80))
 
-        print(f"First frame size: {self.image.get_size()}")
-
-        # Initialize Wumpus in Prolog
-        if self.prolog and getattr(self.prolog, "available", False):
-            self.prolog.init_wumpus(int(pos[0]), int(pos[1]))
-
         print(f"[Wumpus] Initialized at {pos}, HP: {self.health}/{self.max_health}")
+        print(f"[Wumpus] Hearing: {self.hearing_radius}px (base), +{self.chase_hearing_bonus}px (chase)")
+        print(f"[Wumpus] AI: Sound-based detection, map knowledge enabled")
+    
+    @property
+    def pos(self):
+        """Get current position as Vector2 (for compatibility with sound-based AI)"""
+        return pygame.math.Vector2(self.hitbox_rect.center)
 
     def load_animations(self):
         """Load Wumpus animation frames from sprite sheet"""
@@ -172,90 +196,169 @@ class Wumpus(Entity):
 
     def ai_update(self, player_pos, dt):
         """
-        Update AI behavior based on player position and current state.
-        Uses Prolog for decision-making (with Python fallback).
-        This is called separately from update() to provide player position.
+        Sound-based AI update - Wumpus reacts to sounds, not direct vision
+        
+        Args:
+            player_pos: Player position (for attack range check only, NOT detection)
+            dt: Delta time
         """
         if not self.is_alive or self.is_stunned:
             return
 
-        # Get current positions
-        wumpus_pos = pygame.math.Vector2(self.hitbox_rect.center)
-
-        # Prolog AI decision-making
-        if self.prolog and getattr(self.prolog, "available", False):
-            try:
-                # Update Prolog with current position
-                self.prolog.update_wumpus_position(int(wumpus_pos.x), int(wumpus_pos.y))
-
-                # Query Prolog for AI decision
-                new_state, direction_x, direction_y = self.prolog.get_wumpus_decision(
-                    int(wumpus_pos.x),
-                    int(wumpus_pos.y),
-                    int(player_pos.x),
-                    int(player_pos.y),
-                    self.ai_state,
-                )
-
-                # Update state
-                self.ai_state = new_state
-
-                # Handle state-specific behavior
-                if self.ai_state == "patrol":
-                    # Prolog doesn't know patrol points, use Python for patrol navigation
-                    self.patrol()
-
-                elif self.ai_state == "chase":
-                    # Use Prolog's calculated direction
-                    self.direction.x = direction_x
-                    self.direction.y = direction_y
-
-                elif self.ai_state == "attack":
-                    # Stop and attack
-                    self.direction = pygame.math.Vector2(0, 0)
-
-                elif self.ai_state == "dead":
-                    self.direction = pygame.math.Vector2(0, 0)
-
-                return  # Successfully used Prolog AI
-
-            except Exception as e:
-                print(f"[Wumpus] Prolog AI query failed: {e}, falling back to Python")
-
-        # Python fallback AI
-        distance_to_player = wumpus_pos.distance_to(player_pos)
-
-        if distance_to_player <= self.attack_range:
+        # Listen for sounds
+        if self.sound_manager:
+            loudest_sound, loudness = self.sound_manager.get_loudest_sound(
+                self.pos,
+                min_threshold=10.0
+            )
+            
+            # React to detected sound
+            if loudest_sound and loudness > 0:
+                self._handle_sound_detected(loudest_sound, loudness)
+            else:
+                self._handle_no_sound()
+        
+        # Execute behavior based on current state
+        if self.ai_state == WumpusAIState.ROAMING:
+            self._behavior_roaming()
+        elif self.ai_state == WumpusAIState.INVESTIGATING:
+            self._behavior_investigating()
+        elif self.ai_state == WumpusAIState.CHASING:
+            self._behavior_chasing()
+        elif self.ai_state == WumpusAIState.SEARCHING:
+            self._behavior_searching(dt)
+        elif self.ai_state == WumpusAIState.STUNNED:
+            # Just stay still
+            self.direction = pygame.math.Vector2(0, 0)
+        
+        # Check if in attack range (proximity-based, not sound)
+        distance_to_player = self.pos.distance_to(pygame.math.Vector2(player_pos))
+        if distance_to_player <= self.attack_range and self.ai_state == WumpusAIState.CHASING:
+            # Player is very close - attack!
             self.ai_state = "attack"
             self.direction = pygame.math.Vector2(0, 0)
-
-        elif distance_to_player <= self.detection_range:
-            self.ai_state = "chase"
-            direction_to_player = player_pos - wumpus_pos
-            if direction_to_player.length() > 0:
-                self.direction = direction_to_player.normalize()
-
-        else:
-            self.ai_state = "patrol"
-            self.patrol()
-
-    def patrol(self):
-        """Navigate to patrol points"""
-        if self.patrol_points and len(self.patrol_points) > 0:
-            wumpus_pos = pygame.math.Vector2(self.hitbox_rect.center)
-            target = self.patrol_points[self.current_patrol_index]
-            direction_to_target = pygame.math.Vector2(target) - wumpus_pos
-
-            if direction_to_target.length() < 10:  # Reached patrol point
-                self.current_patrol_index = (self.current_patrol_index + 1) % len(
-                    self.patrol_points
-                )
+    
+    def _handle_sound_detected(self, sound, loudness):
+        """React to detected sound"""
+        if sound.source_type == 'rock_impact':
+            # LOUD distraction - investigate immediately!
+            print(f"[Wumpus] Heard rock impact (loudness: {loudness:.1f})! Investigating...")
+            self.ai_state = WumpusAIState.INVESTIGATING
+            self.target_position = sound.position.copy()
+            self.last_heard_sound = sound
+            
+        elif sound.source_type in ['walk', 'dash', 'arrow_shot']:
+            # Player sounds detected
+            if loudness > 30:  # Loud enough to chase
+                print(f"[Wumpus] Heard player (loudness: {loudness:.1f})! Chasing...")
+                self.ai_state = WumpusAIState.CHASING
+                self.target_position = sound.position.copy()
+                self._trigger_roar()
             else:
-                if direction_to_target.length() > 0:
-                    self.direction = direction_to_target.normalize()
+                # Faint sound - just investigate
+                self.ai_state = WumpusAIState.INVESTIGATING
+                self.target_position = sound.position.copy()
+    
+    def _handle_no_sound(self):
+        """No sound detected - continue current behavior"""
+        # If chasing but lost sound, switch to searching
+        if self.ai_state == WumpusAIState.CHASING:
+            self.ai_state = WumpusAIState.SEARCHING
+            self.search_timer = 8.0  # Search for 8 seconds
+            print("[Wumpus] Lost sound... searching area")
+    
+    def _behavior_roaming(self):
+        """Wander the map randomly using map knowledge"""
+        if self.roaming_target is None or self._reached_target():
+            # Pick new random safe position
+            if self.map_knowledge:
+                new_target = self.map_knowledge.get_safe_random_position()
+                if new_target:
+                    self.roaming_target = new_target
+                    self.target_position = pygame.math.Vector2(new_target)
+        
+        # Move towards target with pit avoidance
+        if self.target_position:
+            direction = (self.target_position - self.pos)
+            if direction.length() > 0:
+                self.direction = direction.normalize()
+    
+    def _behavior_investigating(self):
+        """Move to sound source location"""
+        if self._reached_target():
+            # Reached source, nothing here - start searching
+            self.ai_state = WumpusAIState.SEARCHING
+            self.search_timer = 5.0
+            print("[Wumpus] Reached sound location, nothing here... searching")
         else:
-            # No patrol points - stand still
-            self.direction = pygame.math.Vector2(0, 0)
+            # Move towards sound
+            direction = (self.target_position - self.pos)
+            if direction.length() > 0:
+                self.direction = direction.normalize()
+    
+    def _behavior_chasing(self):
+        """Chase last heard player sound"""
+        if self._reached_target():
+            # Lost player at last known position
+            self.ai_state = WumpusAIState.SEARCHING
+            self.search_timer = 8.0
+            self.is_roaring = False
+            self.current_hearing_radius = self.hearing_radius  # Reset hearing
+            print("[Wumpus] Lost player... searching")
+        else:
+            # Continue to last heard position
+            direction = (self.target_position - self.pos)
+            if direction.length() > 0:
+                self.direction = direction.normalize()
+    
+    def _behavior_searching(self, dt):
+        """Search around last known position"""
+        self.search_timer -= dt
+        
+        if self.search_timer <= 0:
+            # Give up, return to roaming
+            self.ai_state = WumpusAIState.ROAMING
+            self.current_hearing_radius = self.hearing_radius
+            self.is_roaring = False
+            print("[Wumpus] Search timeout... resuming roaming")
+        else:
+            # Circle/wander around search area (simplified)
+            # Could implement spiral pattern here
+            if not hasattr(self, 'search_wander_timer'):
+                self.search_wander_timer = 0
+            
+            self.search_wander_timer += dt
+            if self.search_wander_timer > 2.0:  # Change direction every 2 seconds
+                self.search_wander_timer = 0
+                # Random direction
+                import random
+                angle = random.uniform(0, 360)
+                self.direction = pygame.math.Vector2(1, 0).rotate(angle)
+    
+    def _trigger_roar(self):
+        """Roar when starting chase - increases hearing radius"""
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_roar_time > self.roar_cooldown:
+            self.is_roaring = True
+            self.current_hearing_radius = self.hearing_radius + self.chase_hearing_bonus
+            self.last_roar_time = current_time
+            
+            # Emit roar sound
+            if self.sound_manager:
+                self.sound_manager.emit_sound(
+                    self.pos,
+                    SOUND_LEVELS['wumpus_roar'],
+                    SOUND_DURATIONS['wumpus_roar'],
+                    'wumpus_roar'
+                )
+            
+            print(f"[Wumpus] ROAR! Hearing increased to {self.current_hearing_radius}px")
+    
+    def _reached_target(self, threshold=30):
+        """Check if reached target position"""
+        if self.target_position is None:
+            return True
+        return self.pos.distance_to(self.target_position) < threshold
 
     def apply_stun(self, duration=None):
         """
@@ -267,7 +370,7 @@ class Wumpus(Entity):
 
         self.is_stunned = True
         self.stun_timer = duration
-        self.ai_state = "stunned"
+        self.ai_state = WumpusAIState.STUNNED
         self.direction = pygame.math.Vector2(0, 0)
 
         print(f"[Wumpus] Stunned for {duration} seconds!")
@@ -284,16 +387,16 @@ class Wumpus(Entity):
     def on_death(self):
         """Handle Wumpus death"""
         super().on_death()
-        self.ai_state = "dead"
+        self.ai_state = WumpusAIState.DEAD
         self.direction = pygame.math.Vector2(0, 0)
         print("[Wumpus] Wumpus defeated!")
 
     def animate(self, dt):
         """Update animation frames"""
         # Determine animation state
-        if self.ai_state == "dead" or not self.is_alive:
+        if self.ai_state == WumpusAIState.DEAD or not self.is_alive:
             self.current_animation = "death"
-        elif self.ai_state == "attack":
+        elif self.ai_state == "attack":  # Attack still uses string for now
             self.current_animation = "attack"
         elif self.direction.magnitude() > 0:
             self.current_animation = "walk"
@@ -326,13 +429,13 @@ class Wumpus(Entity):
             self.image = pygame.transform.flip(self.image, True, False)
 
     def update(self, dt):
-        """Update Wumpus every frame"""
+        """Update Wumpus every frame with pit avoidance"""
         # Update stun timer
         if self.is_stunned:
             self.stun_timer -= dt
             if self.stun_timer <= 0:
                 self.is_stunned = False
-                self.ai_state = "patrol"
+                self.ai_state = WumpusAIState.ROAMING
                 print("[Wumpus] Recovered from stun!")
 
         # Handle death state
@@ -344,6 +447,41 @@ class Wumpus(Entity):
         if self.is_stunned:
             self.direction = pygame.math.Vector2(0, 0)
 
-        # Move and animate
-        self.move(dt)
+        # Move with pit avoidance and animate
+        self._move_with_pit_avoidance(dt)
         self.animate(dt)
+    
+    def _move_with_pit_avoidance(self, dt):
+        """Move while avoiding pits using map knowledge"""
+        if self.direction.length() == 0:
+            return
+        
+        # Check if current direction leads to danger
+        if self.map_knowledge:
+            # Look ahead
+            look_ahead_distance = 50
+            next_pos = self.pos + self.direction * look_ahead_distance
+            
+            # Check if near pit
+            if self.map_knowledge.is_near_pit(next_pos.x, next_pos.y, danger_radius=50):
+                # Find safe alternative direction
+                safe_directions = self.map_knowledge.find_safe_alternative_directions(
+                    self.pos,
+                    self.direction
+                )
+                
+                if safe_directions:
+                    # Use first safe direction
+                    self.direction = safe_directions[0]
+                    print("[Wumpus] Avoiding pit, changing direction")
+                else:
+                    # No safe direction found - stop
+                    self.direction = pygame.math.Vector2(0, 0)
+                    # Switch to roaming to find new path
+                    if self.ai_state != WumpusAIState.ROAMING:
+                        self.ai_state = WumpusAIState.ROAMING
+                        self.roaming_target = None
+                    return
+        
+        # Normal movement
+        self.move(dt)

@@ -55,11 +55,18 @@ class Entity(pygame.sprite.Sprite):
         self.rect = self.image.get_rect(center=self.position)
         self.hitbox_rect = self.rect.inflate(*hitbox_inflate)
     
-    def move(self, dt):
+    def move(self, dt, speed_override=None):
         """
         Move the entity using Prolog for authoritative collision resolution.
         The core collision logic is in game_logic.pl.
+        
+        Args:
+            dt: Delta time
+            speed_override: Optional speed to use instead of self.speed
         """
+        # Use overridden speed or default
+        movement_speed = speed_override if speed_override is not None else self.speed
+        
         if self.direction.length() == 0:
             # Keep Prolog's authoritative position in sync when idle
             if self.prolog and getattr(self.prolog, 'available', False):
@@ -70,8 +77,8 @@ class Entity(pygame.sprite.Sprite):
             return
 
         # Calculate movement deltas
-        delta_x = self.direction.x * self.speed * dt
-        delta_y = self.direction.y * self.speed * dt
+        delta_x = self.direction.x * movement_speed * dt
+        delta_y = self.direction.y * movement_speed * dt
         
         # =========================================================================
         # PROLOG AUTHORITATIVE MOVEMENT RESOLUTION
