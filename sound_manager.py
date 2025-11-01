@@ -17,12 +17,12 @@ class SoundManager:
     def load_sounds(self):
         """Load all sound files from assets/sounds/"""
         sound_dir = os.path.join("assets", "sounds")
-        
+
         # Define available sounds
         sound_files = {
-            'button': 'button.wav',
-            'footstep': 'footstep.wav',
-            'game_over': 'game_over.wav',
+            "button": "button.wav",
+            "footstep": "footstep.wav",
+            "game_over": "game_over.wav",
         }
 
         # Load each sound file
@@ -51,9 +51,9 @@ class SoundManager:
 
     def play_footstep_loop(self, volume=0.3):
         """Start playing footstep sound in a loop"""
-        if 'footstep' in self.sounds:
+        if "footstep" in self.sounds:
             if self.footstep_channel is None or not self.footstep_channel.get_busy():
-                sound = self.sounds['footstep']
+                sound = self.sounds["footstep"]
                 sound.set_volume(volume)
                 self.footstep_channel = sound.play(loops=-1)  # Loop indefinitely
 

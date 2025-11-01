@@ -5,7 +5,9 @@ from entity import Entity
 class Player(Entity):
     """Player character - controlled by user input"""
 
-    def __init__(self, pos, groups, collision_sprites, prolog_engine=None, sound_manager=None):
+    def __init__(
+        self, pos, groups, collision_sprites, prolog_engine=None, sound_manager=None
+    ):
         # Initialize base Entity
         super().__init__(
             pos, groups, collision_sprites, prolog_engine, entity_type="player"
@@ -288,7 +290,7 @@ class Player(Entity):
         if self.sound_manager:
             # Check if player is moving
             is_currently_walking = self.direction.magnitude() > 0 and self.is_alive
-            
+
             if is_currently_walking:
                 # Player is walking - start looping footstep sound
                 if not self.is_walking:
