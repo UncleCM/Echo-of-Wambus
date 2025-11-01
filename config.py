@@ -105,6 +105,9 @@ class AudioConfig:
     SOUND_BUTTON = "button.wav"
     SOUND_FOOTSTEP = "footstep.wav"
     SOUND_GAME_OVER = "game_over.wav"
+    
+    # Music file names
+    MUSIC_MENU = "Game_Background_Music.mp3"
 
 
 # =============================================================================

@@ -11,9 +11,11 @@ class SoundManager:
         pygame.mixer.init()
         self.sounds = {}
         self.sfx_volume = 0.7
-        self.music_volume = 0.5
+        self.music_volume = 0.3  # Lower volume for background music
         self.footstep_channel = None  # Dedicated channel for footstep looping
+        self.music_loaded = False
         self.load_sounds()
+        self.load_music()
 
     def speed_up_sound(self, sound, speed_factor=1.5):
         try:
@@ -71,6 +73,37 @@ class SoundManager:
             else:
                 print(f"[SoundManager] Sound file not found: {filepath}")
 
+    def load_music(self):
+        """Load background music"""
+        music_file = os.path.join("assets", "sounds", "Game_Background_Music.mp3")
+        if os.path.exists(music_file):
+            try:
+                pygame.mixer.music.load(music_file)
+                pygame.mixer.music.set_volume(self.music_volume)
+                self.music_loaded = True
+                print(f"[SoundManager] Loaded background music")
+            except pygame.error as e:
+                print(f"[SoundManager] Failed to load music: {e}")
+        else:
+            print(f"[SoundManager] Music file not found: {music_file}")
+
+    def play_menu_music(self):
+        """Start playing menu background music in loop"""
+        if self.music_loaded and not pygame.mixer.music.get_busy():
+            pygame.mixer.music.play(loops=-1)  # Loop indefinitely
+            print("[SoundManager] Started menu music")
+
+    def stop_music(self):
+        """Stop the background music"""
+        if pygame.mixer.music.get_busy():
+            pygame.mixer.music.stop()
+            print("[SoundManager] Stopped music")
+
+    def set_music_volume(self, volume):
+        """Set the volume for background music (0.0 to 1.0)"""
+        self.music_volume = max(0.0, min(1.0, volume))
+        pygame.mixer.music.set_volume(self.music_volume)
+
     def play_sound(self, name, volume=None):
         """Play a sound effect by name"""
         if name in self.sounds:
@@ -104,6 +137,7 @@ class SoundManager:
             sound.set_volume(self.sfx_volume)
 
     def stop_all_sounds(self):
-        """Stop all currently playing sounds"""
+        """Stop all currently playing sounds and music"""
         pygame.mixer.stop()
+        self.stop_music()
         self.footstep_channel = None
