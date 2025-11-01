@@ -15,6 +15,7 @@ class SoundManager:
         self.footstep_channel = None  # Dedicated channel for footstep looping
         self.menu_music_loaded = False
         self.ingame_music_loaded = False
+        self.chase_music_loaded = False
         self.current_music = None  # Track which music is currently loaded
         self.load_sounds()
         self.load_menu_music()
@@ -53,6 +54,7 @@ class SoundManager:
             "button": "button.wav",
             "footstep": "footstep.wav",
             "game_over": "game_over.wav",
+            "roar": "Roar_Sound_Effect.mp3",
         }
 
         # Load each sound file
@@ -105,6 +107,21 @@ class SoundManager:
         else:
             print(f"[SoundManager] In-game music file not found: {music_file}")
 
+    def load_chase_music(self):
+        """Load chase scene music"""
+        music_file = os.path.join("assets", "sounds", "Chase_Scene_Music.mp3")
+        if os.path.exists(music_file):
+            try:
+                pygame.mixer.music.load(music_file)
+                pygame.mixer.music.set_volume(self.music_volume)
+                self.chase_music_loaded = True
+                self.current_music = "chase"
+                print(f"[SoundManager] ✅ Chase music loaded")
+            except pygame.error as e:
+                print(f"[SoundManager] Failed to load chase music: {e}")
+        else:
+            print(f"[SoundManager] Chase music file not found: {music_file}")
+
     def play_menu_music(self):
         """Start playing menu background music in loop"""
         if self.current_music != "menu":
@@ -120,6 +137,14 @@ class SoundManager:
         if self.ingame_music_loaded:
             pygame.mixer.music.play(loops=-1)  # Loop indefinitely
             print("[SoundManager] 🎵 Started in-game music")
+
+    def play_chase_music(self):
+        """Start playing chase scene music in loop"""
+        if self.current_music != "chase":
+            self.load_chase_music()
+        if self.chase_music_loaded:
+            pygame.mixer.music.play(loops=-1)  # Loop indefinitely
+            print("[SoundManager] 🎵 Started chase music")
 
     def stop_music(self):
         """Stop the background music"""

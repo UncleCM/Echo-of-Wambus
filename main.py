@@ -40,7 +40,7 @@ class Game:
 
         # Initialize game variables (will be set when starting game)
         self.game_initialized = False
-        
+
         # Start menu music
         self.sound_manager.play_menu_music()
 
@@ -49,7 +49,7 @@ class Game:
         # Stop menu music and start in-game music
         self.sound_manager.stop_music()
         self.sound_manager.play_ingame_music()
-        
+
         # Treasure & Exit system
         self.has_treasure = False
         self.exit_unlocked = False
@@ -90,6 +90,7 @@ class Game:
             [self.all_sprites, self.wumpus_sprites],
             self.collision_sprites,
             self.prolog,
+            self.sound_manager,
         )
         # Set patrol points for Wumpus
         self.wumpus.patrol_points = [
@@ -98,6 +99,9 @@ class Game:
             (wumpus_pos[0] + 200, wumpus_pos[1] + 200),
             (wumpus_pos[0], wumpus_pos[1] + 200),
         ]
+
+        # Track chase state for music switching
+        self.wumpus_was_chasing = False
 
         # Update Prolog with player position (use hitbox for accuracy)
         self.prolog.update_player_position(
@@ -579,6 +583,19 @@ class Game:
                             self.player.hitbox_rect.center
                         )
                         self.wumpus.ai_update(player_center, dt)
+
+                        # Check if Wumpus entered chase mode (dynamic music switch)
+                        is_chasing = self.wumpus.ai_state in ["chase", "attack"]
+                        if is_chasing and not self.wumpus_was_chasing:
+                            # Just entered chase mode - switch to chase music
+                            self.sound_manager.play_chase_music()
+                            print("[Game] 🔥 Wumpus is chasing! Chase music started!")
+                        elif not is_chasing and self.wumpus_was_chasing:
+                            # Just exited chase mode - back to normal in-game music
+                            self.sound_manager.play_ingame_music()
+                            print("[Game] ✅ Wumpus lost player. Normal music resumed.")
+
+                        self.wumpus_was_chasing = is_chasing
 
                     # Update all sprites (Player, Wumpus, Arrows movement/animation)
                     self.all_sprites.update(dt)

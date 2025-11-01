@@ -5,11 +5,16 @@ from entity import Entity
 class Wumpus(Entity):
     """Wumpus enemy - AI-controlled entity that patrols and chases player"""
 
-    def __init__(self, pos, groups, collision_sprites, prolog_engine=None):
+    def __init__(
+        self, pos, groups, collision_sprites, prolog_engine=None, sound_manager=None
+    ):
         # Initialize base Entity
         super().__init__(
             pos, groups, collision_sprites, prolog_engine, entity_type="wumpus"
         )
+
+        # Sound manager for roar effect
+        self.sound_manager = sound_manager
 
         # Wumpus-specific attributes
         self.speed = 150  # Slower than player (200)
@@ -28,6 +33,7 @@ class Wumpus(Entity):
 
         # AI state
         self.ai_state = "patrol"  # 'patrol', 'chase', 'attack', 'stunned', 'dead'
+        self.previous_ai_state = "patrol"  # Track state changes
         self.patrol_points = []  # Will be set by map/AI
         self.current_patrol_index = 0
 
@@ -70,27 +76,29 @@ class Wumpus(Entity):
             # The sprite sheet has 8 columns and appears to have taller sprites
             # Let's try to extract the ENTIRE sprite for each frame
             frames_per_row = 8
-            
+
             # First, let's check if sprites are arranged in standard rows
             # Common sizes: 32x32, 48x48, 64x64, 64x96, 96x96
             # Looking at the sheet, let's try larger frame sizes
-            
+
             # Try to determine frame size by examining the sheet
             # Assume 8 frames per row, and calculate height per row
             frame_width = sheet_width // frames_per_row
-            
+
             # Count total animations to determine frame height
             # Looking at the sprite sheet: idle (8), walk (8), attack (5), death (6) = 27 frames
             # That's about 4 rows, so let's try dividing by 4-6
             estimated_rows = 4
-            frame_height = (sheet_height // estimated_rows) - 5  # Subtract 2 pixels to avoid overlap
-            
+            frame_height = (
+                sheet_height // estimated_rows
+            ) - 5  # Subtract 2 pixels to avoid overlap
+
             print(f"[Wumpus] Calculated frame size: {frame_width}x{frame_height}")
             print(f"[Wumpus] If sprites look cut off, frame_height may need adjustment")
 
             # Scale factor for display
             scale_factor = 2
-            
+
             # Idle animation from first row (frames 0-7)
             idle_frames = []
             for i in range(frames_per_row):
@@ -100,7 +108,9 @@ class Wumpus(Entity):
                     frame, (frame_width * scale_factor, frame_height * scale_factor)
                 )
                 idle_frames.append(scaled_frame)
-            animations["idle"] = idle_frames if idle_frames else [self.create_placeholder()]
+            animations["idle"] = (
+                idle_frames if idle_frames else [self.create_placeholder()]
+            )
 
             # Walk animation from second row (frames 8-15)
             walk_frames = []
@@ -126,7 +136,9 @@ class Wumpus(Entity):
                     frame, (frame_width * scale_factor, frame_height * scale_factor)
                 )
                 attack_frames.append(scaled_frame)
-            animations["attack"] = attack_frames if attack_frames else animations["idle"]
+            animations["attack"] = (
+                attack_frames if attack_frames else animations["idle"]
+            )
 
             # Death animation - 6 frames starting from row 4
             death_frames = []
@@ -149,6 +161,7 @@ class Wumpus(Entity):
             print(f"[Wumpus] Warning: Could not load sprite sheet: {e}")
             print(f"[Wumpus] Error details: {type(e).__name__}")
             import traceback
+
             traceback.print_exc()
             animations["idle"] = [self.create_placeholder()]
             animations["walk"] = animations["idle"]
@@ -181,6 +194,9 @@ class Wumpus(Entity):
 
         # Get current positions
         wumpus_pos = pygame.math.Vector2(self.hitbox_rect.center)
+
+        # Store previous state to detect transitions (for roar sound)
+        old_state = self.ai_state
 
         # Prolog AI decision-making
         if self.prolog and getattr(self.prolog, "available", False):
@@ -217,6 +233,15 @@ class Wumpus(Entity):
                 elif self.ai_state == "dead":
                     self.direction = pygame.math.Vector2(0, 0)
 
+                # Trigger roar sound when entering chase mode (after Prolog decision)
+                if (
+                    old_state != "chase"
+                    and self.ai_state == "chase"
+                    and self.sound_manager
+                ):
+                    self.sound_manager.play_sound("roar", volume=0.1)
+                    print("[Wumpus] 🦁 ROAR! Entering chase mode!")
+
                 return  # Successfully used Prolog AI
 
             except Exception as e:
@@ -238,6 +263,11 @@ class Wumpus(Entity):
         else:
             self.ai_state = "patrol"
             self.patrol()
+
+        # Trigger roar sound when entering chase mode (Python fallback)
+        if old_state != "chase" and self.ai_state == "chase" and self.sound_manager:
+            self.sound_manager.play_sound("roar", volume=0.1)
+            print("[Wumpus] 🦁 ROAR! Entering chase mode!")
 
     def patrol(self):
         """Navigate to patrol points"""
