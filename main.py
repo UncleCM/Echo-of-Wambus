@@ -466,71 +466,103 @@ class Game:
                 self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Player defeated by Wumpus!")
 
+    def cast_ray_to_wall(self, start_world_pos, angle_degrees, max_distance):
+        """Cast a ray from start position and find distance to nearest wall.
+        
+        Args:
+            start_world_pos: (x, y) tuple in world coordinates
+            angle_degrees: angle in degrees (0 = right, 90 = down in pygame coords)
+            max_distance: maximum distance to check
+            
+        Returns:
+            distance to wall, or max_distance if no wall hit
+        """
+        # Convert angle to radians
+        angle_rad = math.radians(angle_degrees)
+        dx = math.cos(angle_rad)
+        dy = math.sin(angle_rad)
+        
+        # Check along the ray in steps
+        step_size = 8
+        steps = int(max_distance / step_size)
+        
+        for step in range(1, steps + 1):
+            distance = step * step_size
+            check_x = start_world_pos[0] + dx * distance
+            check_y = start_world_pos[1] + dy * distance
+            
+            # Create a small rect to check collision
+            check_rect = pygame.Rect(check_x - 3, check_y - 3, 6, 6)
+            
+            # Check against all walls
+            for wall in self.collision_sprites:
+                if check_rect.colliderect(wall.rect):
+                    return distance
+        
+        return max_distance
+
     def draw_flashlight(self):
-        """Draw a directional flashlight beam based on player facing direction."""
+        """Draw a directional flashlight beam with wall occlusion based on player facing direction."""
         darkness = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         darkness.fill((0, 0, 0, 240))  # darkness alpha 240–255 for cave
 
         beam_length = 450
-        beam_angle = 50  # cone width
-        light_color = (255, 255, 200)
+        beam_angle = 50  # cone width in degrees
         player_screen_pos = self.player.rect.center - self.all_sprites.offset
+        player_world_pos = self.player.rect.center
         px, py = player_screen_pos
 
-        # --- Create cone beam surface ---
-        beam_surface = pygame.Surface(
-            (beam_length * 2, beam_length * 2), pygame.SRCALPHA
-        )
-        cx, cy = beam_length, beam_length
-
-        # Draw cone shape filled with light color
-        cone_points = [(cx, cy)]
-        for a in range(-beam_angle // 2, beam_angle // 2 + 1, 1):
-            rad = math.radians(a)
-            x = cx + math.cos(rad) * beam_length
-            y = cy + math.sin(rad) * beam_length
-            cone_points.append((x, y))
-        pygame.draw.polygon(beam_surface, (255, 255, 200, 220), cone_points)
-
-        # --- Add directional gradient inside the cone (fades outward) ---
-        gradient = pygame.Surface((beam_length * 2, beam_length * 2), pygame.SRCALPHA)
-        for i in range(beam_length):
-            alpha = int(255 * (1 - (i / beam_length)))
-            pygame.draw.line(
-                gradient, (255, 255, 180, alpha // 3), (cx, cy), (cx + i, cy), 3
-            )
-        beam_surface.blit(gradient, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
-
-        # --- Rotate cone based on facing direction (supports 8 directions) ---
+        # --- Get base rotation angle based on facing direction ---
         facing = self.player.facing
-        rotation = 0
+        base_angle = 0
 
-        # Map all 8 directions to rotation angles
-        # 0° = right, 90° = up, 180° = left, 270° = down
+        # Map all 8 directions to angles (0° = right, 90° = down, 180° = left, 270° = up)
         if facing == "right":
-            rotation = 0
-        elif facing == "right_up":
-            rotation = 45
-        elif facing == "up":
-            rotation = 90
-        elif facing == "left_up":
-            rotation = 135
-        elif facing == "left":
-            rotation = 180
-        elif facing == "left_down":
-            rotation = 225
-        elif facing == "down":
-            rotation = 270
+            base_angle = 0
         elif facing == "right_down":
-            rotation = 315
+            base_angle = 45
+        elif facing == "down":
+            base_angle = 90
+        elif facing == "left_down":
+            base_angle = 135
+        elif facing == "left":
+            base_angle = 180
+        elif facing == "left_up":
+            base_angle = 225
+        elif facing == "up":
+            base_angle = 270
+        elif facing == "right_up":
+            base_angle = 315
         else:
-            rotation = 0  # Default to right if unknown
+            base_angle = 0  # Default to right
 
-        rotated_beam = pygame.transform.rotate(beam_surface, rotation)
-        beam_rect = rotated_beam.get_rect(center=(px, py))
-
-        # --- Subtract light cone from darkness ---
-        darkness.blit(rotated_beam, beam_rect, special_flags=pygame.BLEND_RGBA_SUB)
+        # --- Cast rays to create light polygon with wall occlusion ---
+        num_rays = 50  # Number of rays in the cone
+        light_points = [player_screen_pos]  # Start with player position
+        
+        for i in range(num_rays + 1):
+            # Calculate angle for this ray within the cone
+            angle_ratio = i / num_rays  # 0.0 to 1.0
+            angle_offset = (angle_ratio - 0.5) * beam_angle  # -25 to +25 degrees
+            ray_angle = base_angle + angle_offset
+            
+            # Cast ray to find wall distance (in world coordinates)
+            distance = self.cast_ray_to_wall(player_world_pos, ray_angle, beam_length)
+            
+            # Convert to screen coordinates
+            angle_rad = math.radians(ray_angle)
+            end_x = px + math.cos(angle_rad) * distance
+            end_y = py + math.sin(angle_rad) * distance
+            light_points.append((end_x, end_y))
+        
+        # --- Draw the light cone polygon ---
+        if len(light_points) > 2:
+            # Create a surface for the light
+            light_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            pygame.draw.polygon(light_surface, (255, 255, 200, 220), light_points, 0)
+            
+            # Subtract light from darkness
+            darkness.blit(light_surface, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
 
         # --- Add subtle player glow (small, dim circle) ---
         glow_radius = 60
