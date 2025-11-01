@@ -14,9 +14,28 @@ from enum import Enum
 class GameState(Enum):
     """Game states for win/lose conditions"""
 
+    MAIN_MENU = "main_menu"
+    CONTROLS = "controls"
     PLAYING = "playing"
     VICTORY = "victory"
     GAME_OVER = "game_over"
+
+
+def get_pixel_font(size):
+    """Get a pixel art style font"""
+    # Try to use a monospace/pixel-style system font first
+    pixel_fonts = ["Courier New", "Monaco", "Consolas", "Courier", "monospace"]
+
+    for font_name in pixel_fonts:
+        try:
+            font = pygame.font.SysFont(font_name, size, bold=True)
+            if font:
+                return font
+        except:
+            continue
+
+    # Fallback to default pygame font (already pixel-style)
+    return pygame.font.Font(None, size)
 
 
 class Game:
@@ -26,21 +45,31 @@ class Game:
         pygame.display.set_caption("Echo of Wumpus")
         self.clock = pygame.time.Clock()
         self.running = True
-        self.game_state = GameState.PLAYING
+        self.game_state = GameState.MAIN_MENU  # Start at main menu
         self.debug_mode = False
-        self.game_start_time = pygame.time.get_ticks()
+        self.game_start_time = None
         self.game_end_time = None
         self.death_reason = None  # Track how player died
 
+        # Main menu state
+        self.menu_selection = 0  # 0 = Start, 1 = Controls, 2 = Quit
+        self.menu_options = ["START GAME", "CONTROLS", "QUIT"]
+
+        # Initialize game variables (will be set when starting game)
+        self.game_initialized = False
+
+    def initialize_game(self):
+        """Initialize/reset the game (called when starting a new game)"""
         # Treasure & Exit system
         self.has_treasure = False
         self.exit_unlocked = False
         self.time_limit = 180  # 3 minutes in seconds
         self.time_remaining = self.time_limit
 
-        # Initialize Prolog engine
-        self.prolog = PrologEngine()
-        print("✓ Prolog engine initialized")
+        # Initialize Prolog engine (only once)
+        if not hasattr(self, "prolog"):
+            self.prolog = PrologEngine()
+            print("✓ Prolog engine initialized")
 
         # Create sprite groups
         self.all_sprites = AllSprites()
@@ -102,6 +131,8 @@ class Game:
         )
 
         self.game_start_time = pygame.time.get_ticks()
+        self.game_state = GameState.PLAYING
+        self.game_initialized = True
 
     def find_spawn_position(self):
         """Find a safe spawn position for the player"""
@@ -541,21 +572,52 @@ class Game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
+
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_r and self.game_state != GameState.PLAYING:
-                        self.restart()
-                    if event.key == pygame.K_f:
-                        self.debug_mode = not self.debug_mode
-                        print(f"Debug mode: {self.debug_mode}")
+                    # Main Menu controls
+                    if self.game_state == GameState.MAIN_MENU:
+                        if event.key == pygame.K_UP:
+                            self.menu_selection = (self.menu_selection - 1) % len(
+                                self.menu_options
+                            )
+                        elif event.key == pygame.K_DOWN:
+                            self.menu_selection = (self.menu_selection + 1) % len(
+                                self.menu_options
+                            )
+                        elif (
+                            event.key == pygame.K_RETURN or event.key == pygame.K_SPACE
+                        ):
+                            if self.menu_selection == 0:  # Start Game
+                                self.initialize_game()
+                            elif self.menu_selection == 1:  # Controls
+                                self.game_state = GameState.CONTROLS
+                            elif self.menu_selection == 2:  # Quit
+                                self.running = False
 
-                    # Arrow shooting (Space key)
-                    if (
-                        event.key == pygame.K_SPACE
-                        and self.game_state == GameState.PLAYING
-                    ):
-                        self.handle_arrow_shooting()
+                    # Controls screen
+                    elif self.game_state == GameState.CONTROLS:
+                        if event.key == pygame.K_ESCAPE:
+                            self.game_state = GameState.MAIN_MENU
 
-            if self.game_state == GameState.PLAYING:
+                    # In-game controls
+                    elif self.game_state == GameState.PLAYING:
+                        if event.key == pygame.K_ESCAPE:
+                            self.game_state = GameState.MAIN_MENU
+                        elif event.key == pygame.K_f:
+                            self.debug_mode = not self.debug_mode
+                            print(f"Debug mode: {self.debug_mode}")
+                        elif event.key == pygame.K_SPACE:
+                            self.handle_arrow_shooting()
+
+                    # Game over / Victory screens
+                    else:
+                        if event.key == pygame.K_r:
+                            self.initialize_game()
+                        elif event.key == pygame.K_ESCAPE:
+                            self.game_state = GameState.MAIN_MENU
+
+            # Update game logic based on state
+            if self.game_state == GameState.PLAYING and self.game_initialized:
                 # Update time remaining
                 elapsed_time = (
                     pygame.time.get_ticks() - self.game_start_time
@@ -604,64 +666,105 @@ class Game:
                     )
                     self.check_game_over()
 
+            # Rendering
             self.screen.fill((30, 30, 30))
-            self.all_sprites.draw(self.screen, self.player)
 
-            self.draw_flashlight()
+            # Draw based on game state
+            if self.game_state == GameState.MAIN_MENU:
+                self.draw_main_menu()
 
-            # Debug visualization (with camera offset)
-            if self.debug_mode:
-                offset = self.all_sprites.offset
+            elif self.game_state == GameState.CONTROLS:
+                self.draw_controls_screen()
 
-                for sprite in self.collision_sprites:
-                    offset_rect = sprite.rect.copy()
-                    offset_rect.topleft -= offset
-                    pygame.draw.rect(self.screen, (255, 0, 0), offset_rect, 2)
+            elif self.game_state == GameState.PLAYING and self.game_initialized:
+                # Draw game world
+                self.all_sprites.draw(self.screen, self.player)
+                self.draw_flashlight()
 
-                for sprite in self.fall_sprites:
-                    offset_rect = sprite.rect.copy()
-                    offset_rect.topleft -= offset
-                    pygame.draw.rect(self.screen, (255, 255, 0), offset_rect, 2)
+                # Debug visualization (with camera offset) - only in PLAYING state
+                if self.debug_mode and self.game_initialized:
+                    offset = self.all_sprites.offset
 
-                offset_hitbox = self.player.hitbox_rect.copy()
-                offset_hitbox.topleft -= offset
-                pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
+                    for sprite in self.collision_sprites:
+                        offset_rect = sprite.rect.copy()
+                        offset_rect.topleft -= offset
+                        pygame.draw.rect(self.screen, (255, 0, 0), offset_rect, 2)
 
-                # Draw Wumpus hitbox and detection range
-                if self.wumpus.is_alive:
-                    wumpus_hitbox = self.wumpus.hitbox_rect.copy()
-                    wumpus_hitbox.topleft -= offset
-                    pygame.draw.rect(self.screen, (255, 0, 255), wumpus_hitbox, 2)
+                    for sprite in self.fall_sprites:
+                        offset_rect = sprite.rect.copy()
+                        offset_rect.topleft -= offset
+                        pygame.draw.rect(self.screen, (255, 255, 0), offset_rect, 2)
 
-                    # Detection range circle
-                    wumpus_center = self.wumpus.hitbox_rect.center
+                    offset_hitbox = self.player.hitbox_rect.copy()
+                    offset_hitbox.topleft -= offset
+                    pygame.draw.rect(self.screen, (0, 255, 0), offset_hitbox, 2)
+
+                    # Draw Wumpus hitbox and detection range
+                    if self.wumpus.is_alive:
+                        wumpus_hitbox = self.wumpus.hitbox_rect.copy()
+                        wumpus_hitbox.topleft -= offset
+                        pygame.draw.rect(self.screen, (255, 0, 255), wumpus_hitbox, 2)
+
+                        # Detection range circle
+                        wumpus_center = self.wumpus.hitbox_rect.center
+                        screen_center = (
+                            int(wumpus_center[0] - offset.x),
+                            int(wumpus_center[1] - offset.y),
+                        )
+                        pygame.draw.circle(
+                            self.screen,
+                            (255, 100, 100),
+                            screen_center,
+                            self.wumpus.detection_range,
+                            1,
+                        )
+
+                        # AI state text
+                        font = get_pixel_font(24)
+                        state_text = font.render(
+                            f"AI: {self.wumpus.ai_state}", True, (255, 255, 255)
+                        )
+                        self.screen.blit(
+                            state_text, (screen_center[0] - 40, screen_center[1] - 100)
+                        )
+
+                        # Wumpus health bar
+                        health_percent = self.wumpus.health / self.wumpus.max_health
+                        bar_width = 100
+                        bar_height = 10
+                        bar_x = screen_center[0] - bar_width // 2
+                        bar_y = screen_center[1] - 120
+                        # Background (red)
+                        pygame.draw.rect(
+                            self.screen,
+                            (100, 0, 0),
+                            (bar_x, bar_y, bar_width, bar_height),
+                        )
+                        # Health (green)
+                        pygame.draw.rect(
+                            self.screen,
+                            (0, 255, 0),
+                            (bar_x, bar_y, int(bar_width * health_percent), bar_height),
+                        )
+                        # Border
+                        pygame.draw.rect(
+                            self.screen,
+                            (255, 255, 255),
+                            (bar_x, bar_y, bar_width, bar_height),
+                            1,
+                        )
+
+                    # Player health bar
+                    player_center = self.player.hitbox_rect.center
                     screen_center = (
-                        int(wumpus_center[0] - offset.x),
-                        int(wumpus_center[1] - offset.y),
+                        int(player_center[0] - offset.x),
+                        int(player_center[1] - offset.y),
                     )
-                    pygame.draw.circle(
-                        self.screen,
-                        (255, 100, 100),
-                        screen_center,
-                        self.wumpus.detection_range,
-                        1,
-                    )
-
-                    # AI state text
-                    font = pygame.font.Font(None, 24)
-                    state_text = font.render(
-                        f"AI: {self.wumpus.ai_state}", True, (255, 255, 255)
-                    )
-                    self.screen.blit(
-                        state_text, (screen_center[0] - 40, screen_center[1] - 100)
-                    )
-
-                    # Wumpus health bar
-                    health_percent = self.wumpus.health / self.wumpus.max_health
+                    health_percent = self.player.health / self.player.max_health
                     bar_width = 100
                     bar_height = 10
                     bar_x = screen_center[0] - bar_width // 2
-                    bar_y = screen_center[1] - 120
+                    bar_y = screen_center[1] - 80
                     # Background (red)
                     pygame.draw.rect(
                         self.screen, (100, 0, 0), (bar_x, bar_y, bar_width, bar_height)
@@ -680,53 +783,23 @@ class Game:
                         1,
                     )
 
-                # Player health bar
-                player_center = self.player.hitbox_rect.center
-                screen_center = (
-                    int(player_center[0] - offset.x),
-                    int(player_center[1] - offset.y),
-                )
-                health_percent = self.player.health / self.player.max_health
-                bar_width = 100
-                bar_height = 10
-                bar_x = screen_center[0] - bar_width // 2
-                bar_y = screen_center[1] - 80
-                # Background (red)
-                pygame.draw.rect(
-                    self.screen, (100, 0, 0), (bar_x, bar_y, bar_width, bar_height)
-                )
-                # Health (green)
-                pygame.draw.rect(
-                    self.screen,
-                    (0, 255, 0),
-                    (bar_x, bar_y, int(bar_width * health_percent), bar_height),
-                )
-                # Border
-                pygame.draw.rect(
-                    self.screen,
-                    (255, 255, 255),
-                    (bar_x, bar_y, bar_width, bar_height),
-                    1,
-                )
+                    feet_height = 10
+                    feet_rect = pygame.Rect(
+                        self.player.hitbox_rect.left,
+                        self.player.hitbox_rect.bottom - feet_height,
+                        self.player.hitbox_rect.width,
+                        feet_height,
+                    )
+                    offset_feet = feet_rect.copy()
+                    offset_feet.topleft -= offset
+                    pygame.draw.rect(self.screen, (0, 255, 255), offset_feet, 3)
 
-                feet_height = 10
-                feet_rect = pygame.Rect(
-                    self.player.hitbox_rect.left,
-                    self.player.hitbox_rect.bottom - feet_height,
-                    self.player.hitbox_rect.width,
-                    feet_height,
-                )
-                offset_feet = feet_rect.copy()
-                offset_feet.topleft -= offset
-                pygame.draw.rect(self.screen, (0, 255, 255), offset_feet, 3)
+                    offset_player = self.player.rect.copy()
+                    offset_player.topleft -= offset
+                    pygame.draw.rect(self.screen, (0, 0, 255), offset_player, 2)
 
-                offset_player = self.player.rect.copy()
-                offset_player.topleft -= offset
-                pygame.draw.rect(self.screen, (0, 0, 255), offset_player, 2)
-
-            # Draw HUD (Timer, arrows, treasure, and exit status)
-            if self.game_state == GameState.PLAYING:
-                font = pygame.font.Font(None, 36)
+                # Draw HUD (Timer, arrows, treasure, and exit status)
+                font = get_pixel_font(36)
 
                 # Timer (top center)
                 minutes = int(self.time_remaining // 60)
@@ -773,7 +846,7 @@ class Game:
                 self.draw_game_over_screen()
             elif self.debug_mode:
                 # Debug info (only in PLAYING state)
-                font = pygame.font.Font(None, 36)
+                font = get_pixel_font(28)
                 debug_text = font.render(
                     f"Player pos: {self.player.rect.topleft} | Animation: {self.player.current_animation}",
                     True,
@@ -787,11 +860,148 @@ class Game:
                     True,
                     (255, 255, 255),
                 )
-                self.screen.blit(debug_text2, (10, 50))
+                self.screen.blit(debug_text2, (10, 40))
 
             pygame.display.update()
 
         pygame.quit()
+
+    def draw_main_menu(self):
+        """Draw the main menu screen"""
+        self.screen.fill((20, 20, 30))  # Dark background
+
+        # Title
+        title_font = get_pixel_font(120)
+        title_text = title_font.render("ECHO OF WUMPUS", True, (255, 215, 0))
+        title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, 150))
+
+        # Add shadow effect to title
+        shadow_text = title_font.render("ECHO OF WUMPUS", True, (100, 86, 0))
+        shadow_rect = shadow_text.get_rect(center=(WINDOW_WIDTH // 2 + 4, 154))
+        self.screen.blit(shadow_text, shadow_rect)
+        self.screen.blit(title_text, title_rect)
+
+        # Subtitle
+        subtitle_font = get_pixel_font(36)
+        subtitle_text = subtitle_font.render(
+            "A Cave Adventure Game", True, (180, 180, 180)
+        )
+        subtitle_rect = subtitle_text.get_rect(center=(WINDOW_WIDTH // 2, 230))
+        self.screen.blit(subtitle_text, subtitle_rect)
+
+        # Menu options
+        menu_font = get_pixel_font(64)
+        menu_y_start = 350
+        menu_spacing = 80
+
+        for i, option in enumerate(self.menu_options):
+            if i == self.menu_selection:
+                # Highlighted option
+                color = (255, 215, 0)
+                text = f"> {option} <"
+            else:
+                # Normal option
+                color = (200, 200, 200)
+                text = option
+
+            menu_text = menu_font.render(text, True, color)
+            menu_rect = menu_text.get_rect(
+                center=(WINDOW_WIDTH // 2, menu_y_start + i * menu_spacing)
+            )
+            self.screen.blit(menu_text, menu_rect)
+
+        # Instructions at bottom
+        instruction_font = get_pixel_font(32)
+        instruction_text = instruction_font.render(
+            "Use UP/DOWN to navigate, ENTER to select", True, (150, 150, 150)
+        )
+        instruction_rect = instruction_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50)
+        )
+        self.screen.blit(instruction_text, instruction_rect)
+
+    def draw_controls_screen(self):
+        """Draw the controls/how to play screen"""
+        self.screen.fill((20, 20, 30))  # Dark background
+
+        # Title
+        title_font = get_pixel_font(80)
+        title_text = title_font.render("CONTROLS", True, (255, 215, 0))
+        title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, 80))
+        self.screen.blit(title_text, title_rect)
+
+        # Controls
+        font = get_pixel_font(40)
+        controls = [
+            ("WASD / Arrow Keys", "Move"),
+            ("SPACE", "Shoot Arrow"),
+            ("F", "Toggle Debug Mode"),
+            ("R", "Restart (when game over)"),
+            ("ESC", "Return to Menu"),
+        ]
+
+        y_pos = 180
+        for key, action in controls:
+            # Key
+            key_text = font.render(key, True, (255, 215, 0))
+            key_rect = key_text.get_rect(right=WINDOW_WIDTH // 2 - 40, top=y_pos)
+            self.screen.blit(key_text, key_rect)
+
+            # Separator
+            separator = font.render("-", True, (150, 150, 150))
+            sep_rect = separator.get_rect(center=(WINDOW_WIDTH // 2, y_pos + 15))
+            self.screen.blit(separator, sep_rect)
+
+            # Action
+            action_text = font.render(action, True, (200, 200, 200))
+            action_rect = action_text.get_rect(left=WINDOW_WIDTH // 2 + 40, top=y_pos)
+            self.screen.blit(action_text, action_rect)
+
+            y_pos += 60
+
+        # Objective
+        objective_font = get_pixel_font(50)
+        objective_title = objective_font.render("OBJECTIVE:", True, (255, 100, 100))
+        objective_rect = objective_title.get_rect(
+            center=(WINDOW_WIDTH // 2, y_pos + 40)
+        )
+        self.screen.blit(objective_title, objective_rect)
+
+        objective_font_small = get_pixel_font(36)
+        objectives = [
+            "1. Find the treasure in the cave",
+            "2. Avoid or stun the Wumpus with arrows",
+            "3. Return to the entrance to escape",
+            "4. Complete before time runs out!",
+        ]
+
+        obj_y = y_pos + 100
+        for obj in objectives:
+            obj_text = objective_font_small.render(obj, True, (200, 200, 200))
+            obj_rect = obj_text.get_rect(center=(WINDOW_WIDTH // 2, obj_y))
+            self.screen.blit(obj_text, obj_rect)
+            obj_y += 45
+
+        # Back instruction
+        back_font = get_pixel_font(32)
+        back_text = back_font.render(
+            "Press ESC to return to menu", True, (150, 150, 150)
+        )
+        back_rect = back_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50))
+        self.screen.blit(back_text, back_rect)
+        for obj in objectives:
+            obj_text = objective_font_small.render(obj, True, (200, 200, 200))
+            obj_rect = obj_text.get_rect(center=(WINDOW_WIDTH // 2, obj_y))
+            self.screen.blit(obj_text, obj_rect)
+            obj_y += 45
+
+        # Back instruction
+        back_font = pygame.font.Font(None, 32)
+        back_text = back_font.render(
+            "Press ESC to return to menu", True, (150, 150, 150)
+        )
+        back_rect = back_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50))
+        self.screen.blit(back_text, back_rect)
 
     def draw_victory_screen(self):
         """Draw victory screen with stats"""
@@ -808,9 +1018,9 @@ class Game:
         seconds = int(elapsed_time % 60)
 
         # Fonts
-        title_font = pygame.font.Font(None, 96)
-        font = pygame.font.Font(None, 48)
-        small_font = pygame.font.Font(None, 36)
+        title_font = get_pixel_font(96)
+        font = get_pixel_font(48)
+        small_font = get_pixel_font(36)
 
         # Title
         title_text = title_font.render("VICTORY!", True, (255, 215, 0))
@@ -867,9 +1077,9 @@ class Game:
         seconds = int(elapsed_time % 60)
 
         # Fonts
-        title_font = pygame.font.Font(None, 96)
-        font = pygame.font.Font(None, 48)
-        small_font = pygame.font.Font(None, 36)
+        title_font = get_pixel_font(96)
+        font = get_pixel_font(48)
+        small_font = get_pixel_font(36)
 
         # Title
         title_text = title_font.render("GAME OVER", True, (255, 0, 0))
@@ -905,7 +1115,7 @@ class Game:
     def restart(self):
         """Restart the game by reinitializing"""
         print("[Game] Restarting...")
-        self.__init__()
+        self.initialize_game()
 
 
 if __name__ == "__main__":
