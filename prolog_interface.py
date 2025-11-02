@@ -45,6 +45,11 @@ class PrologEngine:
         query = f"add_fall_zone({x}, {y}, {w}, {h})"
         self._query(query)
     
+    def add_water_zone(self, x, y, w, h):
+        """Add a water zone to Prolog knowledge base"""
+        query = f"add_water_zone({x}, {y}, {w}, {h})"
+        self._query(query)
+    
     def check_collision(self, x, y, w, h):
         """Check if position collides with any collision box"""
         query = f"check_collision({x}, {y}, {w}, {h})"
@@ -54,6 +59,12 @@ class PrologEngine:
     def check_fall(self, x, y, w, h, feet_height=10):
         """Check if player feet touch any fall zone"""
         query = f"check_fall({x}, {y}, {w}, {h}, {feet_height})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def check_water(self, x, y, w, h, feet_height=10):
+        """Check if player feet are standing in any water zone"""
+        query = f"check_water({x}, {y}, {w}, {h}, {feet_height})"
         results = self._query(query)
         return len(results) > 0
     

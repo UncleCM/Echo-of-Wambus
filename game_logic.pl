@@ -5,6 +5,7 @@
 :- dynamic game_over/1.
 :- dynamic collision_box/4.
 :- dynamic fall_zone/4.
+:- dynamic water_zone/4.
 
 % Initialize game state
 init_game :-
@@ -12,6 +13,7 @@ init_game :-
     retractall(game_over(_)),
     retractall(collision_box(_, _, _, _)),
     retractall(fall_zone(_, _, _, _)),
+    retractall(water_zone(_, _, _, _)),
     asserta(game_over(false)).
 
 % Check if a point is inside a rectangle
@@ -39,12 +41,21 @@ check_fall(PlayerX, PlayerY, PlayerW, PlayerH, FeetHeight) :-
     fall_zone(FallX, FallY, FallW, FallH),
     rects_collide(PlayerX, FeetY, PlayerW, FeetHeight, FallX, FallY, FallW, FallH).
 
+% Check if player is standing in any water zone
+check_water(PlayerX, PlayerY, PlayerW, PlayerH, FeetHeight) :-
+    FeetY is PlayerY + PlayerH - FeetHeight,
+    water_zone(WaterX, WaterY, WaterW, WaterH),
+    rects_collide(PlayerX, FeetY, PlayerW, FeetHeight, WaterX, WaterY, WaterW, WaterH).
+
 % Predicates for managing dynamic facts
 add_collision_box(X, Y, W, H) :-
     assertz(collision_box(X, Y, W, H)).
 
 add_fall_zone(X, Y, W, H) :-
     assertz(fall_zone(X, Y, W, H)).
+
+add_water_zone(X, Y, W, H) :-
+    assertz(water_zone(X, Y, W, H)).
 
 update_player_position(X, Y) :-
     retractall(player_position(_, _)),
@@ -67,6 +78,10 @@ clear_collision_boxes :-
 % Clear all fall zones
 clear_fall_zones :-
     retractall(fall_zone(_, _, _, _)).
+
+% Clear all water zones
+clear_water_zones :-
+    retractall(water_zone(_, _, _, _)).
 
 % Query: Can player move to specific direction? (Kept for compatibility, but deprecated by resolve_movement)
 validate_movement(CurrentX, CurrentY, DeltaX, DeltaY, PlayerW, PlayerH, NewX, NewY) :-
