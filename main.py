@@ -64,9 +64,6 @@ class Game:
         self.arrow_pickup_sprites = pygame.sprite.Group()  # Arrow pickups to collect
         self.rock_sprites = pygame.sprite.Group()  # Flying rocks
         self.rock_pickup_sprites = pygame.sprite.Group()  # Rock pickups to collect
-        
-        # Sound system for stealth gameplay
-        self.sound_manager = SoundManager()
 
         self.setup()
         
@@ -181,41 +178,38 @@ class Game:
         return (fallback_x, fallback_y)
     
     def spawn_wumpus_pack(self):
-        """Spawn 3-4 Wumpus enemies at different locations"""
+        """Spawn 3-4 Wumpus enemies at safe locations (using MapKnowledge)"""
         import random
         
         wumpus_count = random.randint(3, 4)  # 3-4 ตัวสุ่ม
+        spawned = 0
+        max_attempts = 50  # ป้องกัน infinite loop
         
-        # Get map dimensions
-        map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
-        map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
-        
-        # Define spawn areas (แบ่งแผนที่เป็น 4 ส่วน)
-        spawn_areas = [
-            (map_width * 0.75, map_height * 0.25),  # Top-right
-            (map_width * 0.75, map_height * 0.75),  # Bottom-right
-            (map_width * 0.25, map_height * 0.75),  # Bottom-left
-            (map_width * 0.50, map_height * 0.50),  # Center
-        ]
-        
-        # Spawn Wumpus in random areas
-        random.shuffle(spawn_areas)
-        
-        for i in range(wumpus_count):
-            base_x, base_y = spawn_areas[i]
-            # Add random offset
-            spawn_x = base_x + random.randint(-100, 100)
-            spawn_y = base_y + random.randint(-100, 100)
+        # ใช้ MapKnowledge หาตำแหน่งปลอดภัย
+        while spawned < wumpus_count and max_attempts > 0:
+            # ใช้ระบบ safe random position ที่มีอยู่แล้ว
+            safe_pos = self.map_knowledge.get_safe_random_position()
             
-            wumpus = Wumpus(
-                (spawn_x, spawn_y),
-                [self.all_sprites, self.wumpus_sprites],
-                self.collision_sprites,
-                self.prolog,
-                self.map_knowledge,
-                self.sound_manager
-            )
-            print(f"[Wumpus {i+1}/{wumpus_count}] Spawned at ({spawn_x}, {spawn_y})")
+            if safe_pos:
+                spawn_x, spawn_y = safe_pos
+                
+                # เช็คว่าไม่อยู่ใกล้หลุมเกินไป
+                if not self.map_knowledge.is_near_pit(spawn_x, spawn_y, danger_radius=60):
+                    wumpus = Wumpus(
+                        (spawn_x, spawn_y),
+                        [self.all_sprites, self.wumpus_sprites],
+                        self.collision_sprites,
+                        self.prolog,
+                        self.map_knowledge,
+                        self.sound_manager
+                    )
+                    print(f"[Wumpus {spawned+1}/{wumpus_count}] Spawned safely at ({spawn_x:.0f}, {spawn_y:.0f})")
+                    spawned += 1
+            
+            max_attempts -= 1
+        
+        if spawned < wumpus_count:
+            print(f"[Wumpus] Warning: Only spawned {spawned}/{wumpus_count} enemies (safe positions limited)")
 
     def spawn_treasure(self):
         """Spawn treasure chest system (1 real, 2 mimics) using Prolog"""
@@ -237,19 +231,15 @@ class Game:
                     if len(chest_positions) >= 3:
                         break
         
-        # Fallback: generate 3 positions in different areas
+        # Fallback: use safe random positions from MapKnowledge
         if len(chest_positions) < 3:
-            map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
-            map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
-            
-            fallback_positions = [
-                (map_width * 0.75, map_height * 0.25),  # Top-right
-                (map_width * 0.75, map_height * 0.75),  # Bottom-right
-                (map_width * 0.25, map_height * 0.75),  # Bottom-left
-            ]
-            
-            while len(chest_positions) < 3:
-                chest_positions.append(fallback_positions[len(chest_positions)])
+            attempts = 0
+            while len(chest_positions) < 3 and attempts < 20:
+                safe_pos = self.map_knowledge.get_safe_random_position()
+                if safe_pos and not self.map_knowledge.is_near_pit(safe_pos[0], safe_pos[1], 50):
+                    chest_positions.append(safe_pos)
+                    print(f"[Treasure] Generated safe chest position: {safe_pos}")
+                attempts += 1
         
         # Take first 3 positions
         chest_positions = chest_positions[:3]
@@ -345,27 +335,22 @@ class Game:
                 if pickup_count >= ARROW_PICKUP_COUNT:
                     return
 
-        # Fallback: spawn 3 arrow pickups at predefined locations
-        map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
-        map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
-
-        fallback_positions = [
-            (map_width // 4, map_height // 3),  # Upper left area
-            (map_width // 2, map_height * 2 // 3),  # Center-bottom
-            (map_width * 3 // 4, map_height // 2),  # Right-middle
-        ]
-
-        for i, pos in enumerate(
-            fallback_positions[: ARROW_PICKUP_COUNT - pickup_count]
-        ):
-            pickup = ArrowPickup(pos, [self.all_sprites, self.arrow_pickup_sprites], pickup_count)
-            pickup_count += 1
-            
-            # Add to Prolog
-            if self.prolog and self.prolog.available:
-                self.prolog.add_arrow_pickup(pickup_count, int(pos[0]), int(pos[1]))
-            
-            print(f"No arrow spawn found, using fallback {pickup_count}: {pos}")
+        # Fallback: use safe random positions from MapKnowledge
+        needed = ARROW_PICKUP_COUNT - pickup_count
+        attempts = 0
+        
+        while pickup_count < ARROW_PICKUP_COUNT and attempts < 30:
+            safe_pos = self.map_knowledge.get_safe_random_position()
+            if safe_pos and not self.map_knowledge.is_near_pit(safe_pos[0], safe_pos[1], 50):
+                pickup_count += 1
+                pickup = ArrowPickup(safe_pos, [self.all_sprites, self.arrow_pickup_sprites], pickup_count)
+                
+                # Add to Prolog
+                if self.prolog and self.prolog.available:
+                    self.prolog.add_arrow_pickup(pickup_count, int(safe_pos[0]), int(safe_pos[1]))
+                
+                print(f"Arrow pickup {pickup_count} spawned safely at: {safe_pos}")
+            attempts += 1
     
     def spawn_rock_pickups(self):
         """Spawn rock pickups on the map from TMX 'rock' layer"""
@@ -391,28 +376,22 @@ class Game:
                         print(f"Rock pickup {pickup_count} at: {pos}")
                     return
         
-        # Fallback: spawn 5 rock pickups at predefined locations
-        print("No 'rock' layer found, using fallback positions")
-        map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
-        map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
+        # Fallback: use safe random positions from MapKnowledge
+        print("No 'rock' layer found, using safe random positions")
+        attempts = 0
         
-        fallback_positions = [
-            (map_width // 3, map_height // 4),
-            (map_width // 2, map_height // 2),
-            (map_width * 2 // 3, map_height // 3),
-            (map_width // 4, map_height * 3 // 4),
-            (map_width * 3 // 4, map_height * 2 // 3),
-        ]
-        
-        for i, pos in enumerate(fallback_positions[:ROCK_PICKUP_COUNT]):
-            pickup_count += 1
-            pickup = RockPickup(pos, [self.all_sprites, self.rock_pickup_sprites], pickup_count)
-            
-            # Add to Prolog
-            if self.prolog and self.prolog.available:
-                self.prolog.add_rock_pickup(pickup_count, int(pos[0]), int(pos[1]))
-            
-            print(f"Rock pickup {pickup_count} (fallback) at: {pos}")
+        while pickup_count < ROCK_PICKUP_COUNT and attempts < 30:
+            safe_pos = self.map_knowledge.get_safe_random_position()
+            if safe_pos and not self.map_knowledge.is_near_pit(safe_pos[0], safe_pos[1], 50):
+                pickup_count += 1
+                pickup = RockPickup(safe_pos, [self.all_sprites, self.rock_pickup_sprites], pickup_count)
+                
+                # Add to Prolog
+                if self.prolog and self.prolog.available:
+                    self.prolog.add_rock_pickup(pickup_count, int(safe_pos[0]), int(safe_pos[1]))
+                
+                print(f"Rock pickup {pickup_count} spawned safely at: {safe_pos}")
+            attempts += 1
 
     def setup(self):
         self.tmx_map = load_pygame(join("assets", "Map", "test_wall_size.tmx"))
@@ -772,10 +751,17 @@ class Game:
 
         player_center = self.player.hitbox_rect.center
         
+        # Track if any Wumpus is chasing (for music)
+        any_chasing = False
+        
         # Check all Wumpus enemies
         for wumpus in self.wumpus_sprites:
             if not wumpus.is_alive or wumpus.is_stunned:
                 continue
+            
+            # Check if this Wumpus is chasing
+            if wumpus.ai_state == "chasing":
+                any_chasing = True
             
             wumpus_center = wumpus.hitbox_rect.center
             
@@ -811,6 +797,22 @@ class Game:
                 self.sound_manager.stop_music()
                 self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Player defeated by Wumpus!")
+                return
+        
+        # Switch music based on chase state
+        if not hasattr(self, '_is_chase_music_playing'):
+            self._is_chase_music_playing = False
+        
+        if any_chasing and not self._is_chase_music_playing:
+            # Start chase music
+            self.sound_manager.play_chase_music()
+            self._is_chase_music_playing = True
+            print("[Music] 🎵 Switched to CHASE music!")
+        elif not any_chasing and self._is_chase_music_playing:
+            # Back to normal in-game music
+            self.sound_manager.play_ingame_music()
+            self._is_chase_music_playing = False
+            print("[Music] 🎵 Switched back to normal music")
 
     def draw_flashlight(self):
         """Draw a directional flashlight beam based on player facing direction."""
@@ -977,12 +979,6 @@ class Game:
                     # Check if player is in water (apply slowdown before movement)
                     self.check_player_in_water()
                     
-                    # Update Wumpus AI first (before sprite group update)
-                    if self.wumpus.is_alive:
-                        player_center = pygame.math.Vector2(
-                            self.player.hitbox_rect.center
-                        )
-                        self.wumpus.ai_update(player_center, dt)
                     # Update sound system
                     self.sound_manager.update()
                     

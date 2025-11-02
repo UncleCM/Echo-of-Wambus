@@ -351,7 +351,7 @@ class Wumpus(Entity):
             self.current_hearing_radius = self.hearing_radius + self.chase_hearing_bonus
             self.last_roar_time = current_time
             
-            # Emit roar sound
+            # Emit roar sound event (for AI detection)
             if self.sound_manager:
                 self.sound_manager.emit_sound(
                     self.pos,
@@ -359,6 +359,9 @@ class Wumpus(Entity):
                     SOUND_DURATIONS['wumpus_roar'],
                     'wumpus_roar'
                 )
+                
+                # Play actual roar sound effect
+                self.sound_manager.play_sound('roar', volume=0.5)
             
             print(f"[Wumpus] ROAR! Hearing increased to {self.current_hearing_radius}px")
     
