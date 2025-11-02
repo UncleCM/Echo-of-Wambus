@@ -52,6 +52,16 @@ class Wumpus(Entity):
         self.roaming_target = None  # Current roaming destination
         self.search_timer = 0  # Time left searching
 
+        # Patrol route system
+        self.patrol_route = []  # List of waypoints for patrol
+        self.current_waypoint_index = 0  # Current waypoint in patrol route
+        self.patrol_mode = True  # Whether using patrol route or random roaming
+        self._setup_patrol_route()  # Initialize patrol route
+        
+        # A* pathfinding
+        self.current_path = None  # Current A* path being followed
+        self.path_index = 0  # Current position in path
+
         # Roar system
         self.is_roaring = False
         self.roar_cooldown = WUMPUS_ROAR_COOLDOWN  # 5000ms
@@ -72,6 +82,27 @@ class Wumpus(Entity):
         print(f"[Wumpus] Initialized at {pos}, HP: {self.health}/{self.max_health}")
         print(f"[Wumpus] Hearing: {self.hearing_radius}px (base), +{self.chase_hearing_bonus}px (chase)")
         print(f"[Wumpus] AI: Sound-based detection, map knowledge enabled")
+        print(f"[Wumpus] Patrol route: {len(self.patrol_route)} waypoints")
+    
+    def _setup_patrol_route(self):
+        """Setup patrol route with safe waypoints from map knowledge"""
+        if not self.map_knowledge:
+            return
+        
+        # Generate 5-8 random patrol waypoints in safe positions
+        import random
+        num_waypoints = random.randint(5, 8)
+        
+        for _ in range(num_waypoints):
+            safe_pos = self.map_knowledge.get_safe_random_position()
+            if safe_pos:
+                self.patrol_route.append(pygame.math.Vector2(safe_pos))
+        
+        if self.patrol_route:
+            self.patrol_mode = True
+            print(f"[Wumpus] Created patrol route with {len(self.patrol_route)} waypoints")
+        else:
+            print("[Wumpus] Failed to create patrol route, using random roaming")
     
     @property
     def pos(self):
@@ -254,6 +285,8 @@ class Wumpus(Entity):
             self.ai_state = WumpusAIState.INVESTIGATING
             self.target_position = sound.position.copy()
             self.last_heard_sound = sound
+            self.current_path = None  # Clear path when changing target
+            self.path_index = 0
             
         elif sound.source_type in ['walk', 'dash', 'arrow_shot']:
             # Player sounds detected
@@ -261,11 +294,15 @@ class Wumpus(Entity):
                 print(f"[Wumpus] Heard player (loudness: {loudness:.1f})! Chasing...")
                 self.ai_state = WumpusAIState.CHASING
                 self.target_position = sound.position.copy()
+                self.current_path = None  # Clear path when changing target
+                self.path_index = 0
                 self._trigger_roar()
             else:
                 # Faint sound - just investigate
                 self.ai_state = WumpusAIState.INVESTIGATING
                 self.target_position = sound.position.copy()
+                self.current_path = None  # Clear path when changing target
+                self.path_index = 0
     
     def _handle_no_sound(self):
         """No sound detected - continue current behavior"""
@@ -273,51 +310,183 @@ class Wumpus(Entity):
         if self.ai_state == WumpusAIState.CHASING:
             self.ai_state = WumpusAIState.SEARCHING
             self.search_timer = 8.0  # Search for 8 seconds
+            self.current_path = None  # Clear path when searching
+            self.path_index = 0
             print("[Wumpus] Lost sound... searching area")
     
     def _behavior_roaming(self):
-        """Wander the map randomly using map knowledge"""
-        if self.roaming_target is None or self._reached_target():
-            # Pick new random safe position
+        """Wander the map using patrol route or random positions"""
+        if self.patrol_mode and self.patrol_route:
+            # Follow patrol route
+            if self.current_waypoint_index >= len(self.patrol_route):
+                self.current_waypoint_index = 0  # Loop back to start
+            
+            current_waypoint = self.patrol_route[self.current_waypoint_index]
+            
+            # Check if reached current waypoint
+            if self.pos.distance_to(current_waypoint) < 30:
+                # Move to next waypoint
+                self.current_waypoint_index += 1
+                if self.current_waypoint_index >= len(self.patrol_route):
+                    self.current_waypoint_index = 0
+                current_waypoint = self.patrol_route[self.current_waypoint_index]
+                print(f"[Wumpus] Patrol: Moving to waypoint {self.current_waypoint_index + 1}/{len(self.patrol_route)}")
+            
+            # Use A* to navigate to waypoint
             if self.map_knowledge:
-                new_target = self.map_knowledge.get_safe_random_position()
-                if new_target:
-                    self.roaming_target = new_target
-                    self.target_position = pygame.math.Vector2(new_target)
-        
-        # Move towards target with pit avoidance
-        if self.target_position:
-            direction = (self.target_position - self.pos)
-            if direction.length() > 0:
-                self.direction = direction.normalize()
+                # Calculate path if we don't have one or reached end of path
+                if not self.current_path or self.path_index >= len(self.current_path):
+                    self.current_path = self.map_knowledge.find_path_astar(
+                        (self.pos.x, self.pos.y),
+                        (current_waypoint.x, current_waypoint.y)
+                    )
+                    self.path_index = 0
+                
+                # Follow path
+                if self.current_path and self.path_index < len(self.current_path):
+                    next_pos = pygame.math.Vector2(self.current_path[self.path_index])
+                    
+                    # Check if reached current path node
+                    if self.pos.distance_to(next_pos) < 20:
+                        self.path_index += 1
+                    
+                    # Move towards next path node
+                    if self.path_index < len(self.current_path):
+                        direction = pygame.math.Vector2(self.current_path[self.path_index]) - self.pos
+                        if direction.length() > 0:
+                            self.direction = direction.normalize()
+                    else:
+                        # Reached end of path, move directly to waypoint
+                        direction = current_waypoint - self.pos
+                        if direction.length() > 0:
+                            self.direction = direction.normalize()
+                else:
+                    # No path found, move directly (will be blocked by walls)
+                    direction = current_waypoint - self.pos
+                    if direction.length() > 0:
+                        self.direction = direction.normalize()
+            else:
+                # No map knowledge, move directly
+                direction = current_waypoint - self.pos
+                if direction.length() > 0:
+                    self.direction = direction.normalize()
+        else:
+            # Random roaming (old behavior)
+            if self.roaming_target is None or self._reached_target():
+                # Pick new random safe position
+                if self.map_knowledge:
+                    new_target = self.map_knowledge.get_safe_random_position()
+                    if new_target:
+                        self.roaming_target = new_target
+                        self.target_position = pygame.math.Vector2(new_target)
+                        self.current_path = None  # Clear path
+            
+            # Move towards target with pit avoidance
+            if self.target_position:
+                direction = (self.target_position - self.pos)
+                if direction.length() > 0:
+                    self.direction = direction.normalize()
     
     def _behavior_investigating(self):
-        """Move to sound source location"""
+        """Move to sound source location using A* pathfinding"""
         if self._reached_target():
             # Reached source, nothing here - start searching
             self.ai_state = WumpusAIState.SEARCHING
             self.search_timer = 5.0
+            self.current_path = None
             print("[Wumpus] Reached sound location, nothing here... searching")
         else:
-            # Move towards sound
-            direction = (self.target_position - self.pos)
-            if direction.length() > 0:
-                self.direction = direction.normalize()
+            # Use A* to navigate to sound location
+            if self.map_knowledge and self.target_position:
+                # Calculate path if we don't have one
+                if not self.current_path or self.path_index >= len(self.current_path):
+                    self.current_path = self.map_knowledge.find_path_astar(
+                        (self.pos.x, self.pos.y),
+                        (self.target_position.x, self.target_position.y)
+                    )
+                    self.path_index = 0
+                
+                # Follow path
+                if self.current_path and self.path_index < len(self.current_path):
+                    next_pos = pygame.math.Vector2(self.current_path[self.path_index])
+                    
+                    # Check if reached current path node
+                    if self.pos.distance_to(next_pos) < 20:
+                        self.path_index += 1
+                    
+                    # Move towards next path node
+                    if self.path_index < len(self.current_path):
+                        direction = pygame.math.Vector2(self.current_path[self.path_index]) - self.pos
+                    else:
+                        direction = self.target_position - self.pos
+                    
+                    if direction.length() > 0:
+                        self.direction = direction.normalize()
+                else:
+                    # No path found, move directly
+                    direction = (self.target_position - self.pos)
+                    if direction.length() > 0:
+                        self.direction = direction.normalize()
+            else:
+                # No map knowledge, move directly
+                direction = (self.target_position - self.pos)
+                if direction.length() > 0:
+                    self.direction = direction.normalize()
     
     def _behavior_chasing(self):
-        """Chase last heard player sound"""
+        """Chase last heard player sound using A* pathfinding"""
         if self._reached_target():
             # Lost player at last known position
             self.ai_state = WumpusAIState.SEARCHING
             self.search_timer = 8.0
             self.is_roaring = False
             self.current_hearing_radius = self.hearing_radius  # Reset hearing
+            self.current_path = None
             print("[Wumpus] Lost player... searching")
         else:
-            # Continue to last heard position
-            direction = (self.target_position - self.pos)
-            if direction.length() > 0:
-                self.direction = direction.normalize()
+            # Use A* to chase player
+            if self.map_knowledge and self.target_position:
+                # Recalculate path frequently during chase (every few frames)
+                if not hasattr(self, '_chase_path_timer'):
+                    self._chase_path_timer = 0
+                
+                self._chase_path_timer += 1
+                
+                # Recalculate path every 30 frames (~0.5 seconds at 60fps)
+                if not self.current_path or self._chase_path_timer >= 30:
+                    self.current_path = self.map_knowledge.find_path_astar(
+                        (self.pos.x, self.pos.y),
+                        (self.target_position.x, self.target_position.y)
+                    )
+                    self.path_index = 0
+                    self._chase_path_timer = 0
+                
+                # Follow path
+                if self.current_path and self.path_index < len(self.current_path):
+                    next_pos = pygame.math.Vector2(self.current_path[self.path_index])
+                    
+                    # Check if reached current path node
+                    if self.pos.distance_to(next_pos) < 20:
+                        self.path_index += 1
+                    
+                    # Move towards next path node
+                    if self.path_index < len(self.current_path):
+                        direction = pygame.math.Vector2(self.current_path[self.path_index]) - self.pos
+                    else:
+                        direction = self.target_position - self.pos
+                    
+                    if direction.length() > 0:
+                        self.direction = direction.normalize()
+                else:
+                    # No path found, move directly
+                    direction = (self.target_position - self.pos)
+                    if direction.length() > 0:
+                        self.direction = direction.normalize()
+            else:
+                # No map knowledge, move directly
+                direction = (self.target_position - self.pos)
+                if direction.length() > 0:
+                    self.direction = direction.normalize()
     
     def _behavior_searching(self, dt):
         """Search around last known position"""

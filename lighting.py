@@ -73,6 +73,7 @@ class FlashlightSystem:
         Cast a ray from start position and find distance to nearest wall.
 
         Uses stepped raycasting to check for wall collisions along the ray path.
+        SIMPLE RAYCASTING: Steps through the ray at fixed intervals checking for collision.
 
         Args:
             start_world_pos: (x, y) tuple in world coordinates
@@ -108,9 +109,10 @@ class FlashlightSystem:
             # Check against all wall sprites
             for wall in self.collision_sprites:
                 if check_rect.colliderect(wall.rect):
+                    # Wall hit! Return the distance to this point
                     return distance
 
-        # No wall hit, return maximum distance
+        # No wall hit within max distance
         return max_distance
 
     def get_facing_angle(self, facing_direction):

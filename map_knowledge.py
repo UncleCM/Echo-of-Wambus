@@ -242,3 +242,115 @@ class MapKnowledge:
             'cell_size': self.grid_size,
             'safe_positions': len(self.safe_positions_cache)
         }
+    
+    # =========================================================================
+    # A* PATHFINDING SYSTEM
+    # =========================================================================
+    
+    def world_to_grid(self, world_x, world_y):
+        """Convert world coordinates to grid cell coordinates"""
+        col = int(world_x) // self.grid_size
+        row = int(world_y) // self.grid_size
+        return (row, col)
+    
+    def grid_to_world(self, row, col):
+        """Convert grid cell to world coordinates (center of cell)"""
+        x = col * self.grid_size + self.grid_size // 2
+        y = row * self.grid_size + self.grid_size // 2
+        return (x, y)
+    
+    def get_neighbors(self, row, col):
+        """Get valid neighboring cells (8-directional movement)"""
+        neighbors = []
+        
+        # 8 directions: N, NE, E, SE, S, SW, W, NW
+        directions = [
+            (-1, 0), (-1, 1), (0, 1), (1, 1),
+            (1, 0), (1, -1), (0, -1), (-1, -1)
+        ]
+        
+        for dr, dc in directions:
+            new_row = row + dr
+            new_col = col + dc
+            
+            # Check bounds
+            if 0 <= new_row < len(self.navigation_grid) and 0 <= new_col < len(self.navigation_grid[0]):
+                # Check if cell is safe
+                if self.navigation_grid[new_row][new_col]:
+                    neighbors.append((new_row, new_col))
+        
+        return neighbors
+    
+    def heuristic(self, pos1, pos2):
+        """Calculate heuristic (Euclidean distance) between two grid positions"""
+        import math
+        row1, col1 = pos1
+        row2, col2 = pos2
+        return math.sqrt((row2 - row1)**2 + (col2 - col1)**2)
+    
+    def find_path_astar(self, start_world_pos, goal_world_pos):
+        """
+        Find path from start to goal using A* algorithm
+        
+        Args:
+            start_world_pos: (x, y) tuple in world coordinates
+            goal_world_pos: (x, y) tuple in world coordinates
+            
+        Returns:
+            list of (x, y) world coordinates representing the path, or None if no path found
+        """
+        import heapq
+        
+        # Convert world coordinates to grid coordinates
+        start_grid = self.world_to_grid(*start_world_pos)
+        goal_grid = self.world_to_grid(*goal_world_pos)
+        
+        # Check if start and goal are valid
+        start_row, start_col = start_grid
+        goal_row, goal_col = goal_grid
+        
+        if not (0 <= start_row < len(self.navigation_grid) and 0 <= start_col < len(self.navigation_grid[0])):
+            return None
+        if not (0 <= goal_row < len(self.navigation_grid) and 0 <= goal_col < len(self.navigation_grid[0])):
+            return None
+        if not self.navigation_grid[start_row][start_col] or not self.navigation_grid[goal_row][goal_col]:
+            return None
+        
+        # A* algorithm
+        open_set = []
+        heapq.heappush(open_set, (0, start_grid))
+        
+        came_from = {}
+        g_score = {start_grid: 0}
+        f_score = {start_grid: self.heuristic(start_grid, goal_grid)}
+        
+        while open_set:
+            current = heapq.heappop(open_set)[1]
+            
+            # Reached goal
+            if current == goal_grid:
+                # Reconstruct path
+                path = []
+                while current in came_from:
+                    world_pos = self.grid_to_world(*current)
+                    path.append(world_pos)
+                    current = came_from[current]
+                path.reverse()
+                return path
+            
+            # Check neighbors
+            for neighbor in self.get_neighbors(*current):
+                # Calculate tentative g_score
+                tentative_g = g_score[current] + 1
+                
+                if neighbor not in g_score or tentative_g < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g
+                    f_score[neighbor] = tentative_g + self.heuristic(neighbor, goal_grid)
+                    
+                    if neighbor not in [item[1] for item in open_set]:
+                        heapq.heappush(open_set, (f_score[neighbor], neighbor))
+        
+        # No path found
+        return None
+

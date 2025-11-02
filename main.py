@@ -8,6 +8,7 @@ from prolog_interface import PrologEngine
 from main_menu import GameState, get_pixel_font, MainMenu, ControlsScreen
 from sound_system import SoundManager
 from map_knowledge import MapKnowledge
+from lighting import FlashlightSystem  # Import raycasting flashlight system
 
 from random import randint
 import math
@@ -73,6 +74,9 @@ class Game:
             self.collision_sprites, 
             self.fall_sprites
         )
+        
+        # Initialize flashlight system with raycasting
+        self.flashlight_system = FlashlightSystem(self.collision_sprites)
 
         spawn_pos = self.find_spawn_position()
         # Create player and give it a reference to the Prolog engine and sound manager
@@ -178,12 +182,14 @@ class Game:
         return (fallback_x, fallback_y)
     
     def spawn_wumpus_pack(self):
-        """Spawn 3-4 Wumpus enemies at safe locations (using MapKnowledge)"""
+        """Spawn 3-4 Wumpus enemies at safe locations, spread far apart"""
         import random
         
         wumpus_count = random.randint(3, 4)  # 3-4 ตัวสุ่ม
         spawned = 0
-        max_attempts = 50  # ป้องกัน infinite loop
+        max_attempts = 200  # เพิ่มจำนวนครั้งที่พยายามให้มากขึ้น
+        spawned_positions = []  # เก็บตำแหน่งที่ spawn ไปแล้ว
+        min_distance_between_wumpus = 250  # ระยะห่างขั้นต่ำระหว่าง Wumpus (pixels) - ลดลงจาก 300 เพื่อความยืดหยุ่น
         
         # ใช้ MapKnowledge หาตำแหน่งปลอดภัย
         while spawned < wumpus_count and max_attempts > 0:
@@ -194,17 +200,34 @@ class Game:
                 spawn_x, spawn_y = safe_pos
                 
                 # เช็คว่าไม่อยู่ใกล้หลุมเกินไป
-                if not self.map_knowledge.is_near_pit(spawn_x, spawn_y, danger_radius=60):
-                    wumpus = Wumpus(
-                        (spawn_x, spawn_y),
-                        [self.all_sprites, self.wumpus_sprites],
-                        self.collision_sprites,
-                        self.prolog,
-                        self.map_knowledge,
-                        self.sound_manager
-                    )
-                    print(f"[Wumpus {spawned+1}/{wumpus_count}] Spawned safely at ({spawn_x:.0f}, {spawn_y:.0f})")
-                    spawned += 1
+                if self.map_knowledge.is_near_pit(spawn_x, spawn_y, danger_radius=60):
+                    max_attempts -= 1
+                    continue
+                
+                # เช็คว่าห่างจาก Wumpus ตัวอื่นๆ พอ
+                too_close = False
+                for other_x, other_y in spawned_positions:
+                    distance = math.sqrt((spawn_x - other_x)**2 + (spawn_y - other_y)**2)
+                    if distance < min_distance_between_wumpus:
+                        too_close = True
+                        break
+                
+                if too_close:
+                    max_attempts -= 1
+                    continue
+                
+                # ตำแหน่งนี้ปลอดภัยและห่างพอ - spawn Wumpus
+                wumpus = Wumpus(
+                    (spawn_x, spawn_y),
+                    [self.all_sprites, self.wumpus_sprites],
+                    self.collision_sprites,
+                    self.prolog,
+                    self.map_knowledge,
+                    self.sound_manager
+                )
+                spawned_positions.append((spawn_x, spawn_y))
+                print(f"[Wumpus {spawned+1}/{wumpus_count}] Spawned safely at ({spawn_x:.0f}, {spawn_y:.0f})")
+                spawned += 1
             
             max_attempts -= 1
         
@@ -815,92 +838,18 @@ class Game:
             print("[Music] 🎵 Switched back to normal music")
 
     def draw_flashlight(self):
-        """Draw a directional flashlight beam based on player facing direction."""
-        darkness = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        darkness.fill((0, 0, 0, 240))  # darkness alpha 240–255 for cave
-
-        beam_length = 450
-        beam_angle = 50  # cone width
-        light_color = (255, 255, 200)
+        """Draw a directional flashlight beam with raycasting (stops at walls)."""
+        # Get player positions
         player_screen_pos = self.player.rect.center - self.all_sprites.offset
-        px, py = player_screen_pos
-
-        # --- Create cone beam surface ---
-        beam_surface = pygame.Surface(
-            (beam_length * 2, beam_length * 2), pygame.SRCALPHA
+        player_world_pos = self.player.rect.center
+        
+        # Use the FlashlightSystem to render with raycasting
+        self.flashlight_system.render(
+            self.screen,
+            player_screen_pos,
+            player_world_pos,
+            self.player.facing
         )
-        cx, cy = beam_length, beam_length
-
-        # Draw cone shape filled with light color
-        cone_points = [(cx, cy)]
-        for a in range(-beam_angle // 2, beam_angle // 2 + 1, 1):
-            rad = math.radians(a)
-            x = cx + math.cos(rad) * beam_length
-            y = cy + math.sin(rad) * beam_length
-            cone_points.append((x, y))
-        pygame.draw.polygon(beam_surface, (255, 255, 200, 220), cone_points)
-
-        # --- Add directional gradient inside the cone (fades outward) ---
-        gradient = pygame.Surface((beam_length * 2, beam_length * 2), pygame.SRCALPHA)
-        for i in range(beam_length):
-            alpha = int(255 * (1 - (i / beam_length)))
-            pygame.draw.line(
-                gradient, (255, 255, 180, alpha // 3), (cx, cy), (cx + i, cy), 3
-            )
-        beam_surface.blit(gradient, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
-
-        # --- Rotate cone based on facing direction (supports 8 directions) ---
-        facing = self.player.facing
-        rotation = 0
-
-        # Map all 8 directions to rotation angles
-        # 0° = right, 90° = up, 180° = left, 270° = down
-        if facing == "right":
-            rotation = 0
-        elif facing == "right_up":
-            rotation = 45
-        elif facing == "up":
-            rotation = 90
-        elif facing == "left_up":
-            rotation = 135
-        elif facing == "left":
-            rotation = 180
-        elif facing == "left_down":
-            rotation = 225
-        elif facing == "down":
-            rotation = 270
-        elif facing == "right_down":
-            rotation = 315
-        else:
-            rotation = 0  # Default to right if unknown
-
-        rotated_beam = pygame.transform.rotate(beam_surface, rotation)
-        beam_rect = rotated_beam.get_rect(center=(px, py))
-
-        # --- Subtract light cone from darkness ---
-        darkness.blit(rotated_beam, beam_rect, special_flags=pygame.BLEND_RGBA_SUB)
-
-        # --- Add subtle player glow (small, dim circle) ---
-        glow_radius = 60
-        glow_surface = pygame.Surface(
-            (glow_radius * 2, glow_radius * 2), pygame.SRCALPHA
-        )
-        for r in range(glow_radius, 0, -4):
-            alpha = max(0, 180 - (r / glow_radius) * 180)
-            pygame.draw.circle(
-                glow_surface,
-                (255, 255, 200, int(alpha / 2)),
-                (glow_radius, glow_radius),
-                r,
-            )
-        darkness.blit(
-            glow_surface,
-            (px - glow_radius, py - glow_radius),
-            special_flags=pygame.BLEND_RGBA_SUB,
-        )
-
-        # --- Draw final result ---
-        self.screen.blit(darkness, (0, 0))
 
     def run(self):
         while self.running:
