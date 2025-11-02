@@ -5,12 +5,9 @@ from sprites import *
 from groups import AllSprites
 from pytmx.util_pygame import load_pygame
 from prolog_interface import PrologEngine
+from main_menu import GameState, get_pixel_font, MainMenu, ControlsScreen
 from sound_system import SoundManager
 from map_knowledge import MapKnowledge
-from game_state import GameState
-from ui import MenuScreens, get_pixel_font
-from lighting import FlashlightSystem
-from config import GameplayConfig, MenuConfig, WorldConfig
 
 from random import randint
 import math
@@ -29,31 +26,25 @@ class Game:
         self.game_end_time = None
         self.death_reason = None  # Track how player died
 
+        # Menu handlers
+        self.main_menu = MainMenu(self.screen)
+        self.controls_screen = ControlsScreen(self.screen)
+
         # Initialize sound manager
         self.sound_manager = SoundManager()
-
-        # Initialize UI/Menu screens
-        self.menu_screens = MenuScreens(self.screen)
-
-        # Main menu state
-        self.menu_selection = 0  # 0 = Start, 1 = Controls, 2 = Quit
-        self.menu_options = MenuConfig.MENU_OPTIONS
-
-        # Initialize game variables (will be set when starting game)
-        self.game_initialized = False
         
         # Start menu music
         self.sound_manager.play_menu_music()
 
+        # Initialize game variables (will be set when starting game)
+        self.game_initialized = False
+
     def initialize_game(self):
         """Initialize/reset the game (called when starting a new game)"""
-        # Stop menu music when game starts
-        self.sound_manager.stop_music()
-        
         # Treasure & Exit system
         self.has_treasure = False
         self.exit_unlocked = False
-        self.time_limit = GameplayConfig.TIME_LIMIT
+        self.time_limit = 180  # 3 minutes in seconds
         self.time_remaining = self.time_limit
 
         # Initialize Prolog engine (only once)
@@ -65,6 +56,7 @@ class Game:
         self.all_sprites = AllSprites()
         self.collision_sprites = pygame.sprite.Group()
         self.fall_sprites = pygame.sprite.Group()
+        self.water_sprites = pygame.sprite.Group()  # Water zones that slow down player
         self.wumpus_sprites = pygame.sprite.Group()
         self.treasure_sprites = pygame.sprite.Group()
         self.exit_sprites = pygame.sprite.Group()
@@ -86,7 +78,7 @@ class Game:
         )
 
         spawn_pos = self.find_spawn_position()
-        # Create player and give it a reference to the Prolog engine (single instance)
+        # Create player and give it a reference to the Prolog engine and sound manager
         self.player = Player(
             spawn_pos, self.all_sprites, self.collision_sprites, self.prolog, self.sound_manager
         )
@@ -105,11 +97,8 @@ class Game:
         self.spawn_arrow_pickups()
         self.spawn_rock_pickups()  # NEW: spawn rocks for distraction 
 
-        # Initialize lighting system
-        self.lighting_system = FlashlightSystem(self.collision_sprites)
-
         # Flashlight and darkness setup
-        self.flashlight_on = True 
+        self.flashlight_on = True
         self.dark_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.dark_surface.fill((0, 0, 0))
         self.dark_surface.set_alpha(6000)  # adjust transparency for darkness
@@ -126,6 +115,9 @@ class Game:
         self.game_start_time = pygame.time.get_ticks()
         self.game_state = GameState.PLAYING
         self.game_initialized = True
+        
+        # Switch to in-game music
+        self.sound_manager.play_ingame_music()
 
     def find_spawn_position(self):
         """Find a safe spawn position for the player"""
@@ -460,15 +452,23 @@ class Game:
                             int(pos[0]), int(pos[1]), int(size[0]), int(size[1])
                         )
 
+                if "water" in layer.name.lower():
+                    for obj in layer:
+                        pos = (obj.x * self.map_scale, obj.y * self.map_scale)
+                        size = (obj.width * self.map_scale, obj.height * self.map_scale)
+                        WaterZone(pos, size, self.water_sprites)
+                        # Register with Prolog
+                        self.prolog.add_water_zone(
+                            int(pos[0]), int(pos[1]), int(size[0]), int(size[1])
+                        )
+
         print(f"Collision sprites: {len(self.collision_sprites)}")
         print(f"Fall zones: {len(self.fall_sprites)}")
+        print(f"Water zones: {len(self.water_sprites)}")
 
     def check_game_over(self):
         """Check if player fell into a fall zone using Prolog"""
-        if (
-            pygame.time.get_ticks() - self.game_start_time
-            < GameplayConfig.SPAWN_PROTECTION_MS
-        ):
+        if pygame.time.get_ticks() - self.game_start_time < 500:
             return False
 
         if self.game_state == GameState.PLAYING:
@@ -484,11 +484,37 @@ class Game:
                 self.game_end_time = pygame.time.get_ticks()
                 self.death_reason = "Fell into a pit!"
                 self.prolog.set_game_over(True)
-                self.sound_manager.stop_footstep_loop()
+                self.sound_manager.stop_music()
                 self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Fell into a hole! (Prolog detected)")
                 return True
         return False
+
+    def check_player_in_water(self):
+        """Check if player is standing in water zone and apply speed slowdown"""
+        if not hasattr(self, 'player') or not self.player.is_alive:
+            return
+        
+        # Use Prolog to check if player feet are in water
+        in_water = self.prolog.check_water(
+            int(self.player.hitbox_rect.x),
+            int(self.player.hitbox_rect.y),
+            int(self.player.hitbox_rect.width),
+            int(self.player.hitbox_rect.height),
+            10,  # feet_height
+        )
+        
+        # Store base speed if not already stored
+        if not hasattr(self.player, '_base_speed'):
+            self.player._base_speed = self.player.speed
+        
+        # Apply water slowdown (50% speed when in water)
+        if in_water:
+            # Apply 50% speed reduction (multiply by 0.5)
+            self.player.speed = self.player._base_speed * 0.5
+        else:
+            # Restore normal speed
+            self.player.speed = self.player._base_speed
 
     def check_treasure_collection(self):
         """Check if player opens treasure chests (press E near chest)"""
@@ -572,6 +598,8 @@ class Game:
             if can_exit:
                 self.game_state = GameState.VICTORY
                 self.game_end_time = pygame.time.get_ticks()
+                self.sound_manager.stop_music()
+                # Victory sound can be added here if available
                 print("VICTORY - Escaped with the treasure!")
 
     def handle_arrow_shooting(self):
@@ -593,6 +621,8 @@ class Game:
                 [self.all_sprites, self.arrow_sprites],
                 self.collision_sprites,
             )
+            # Play arrow shooting sound
+            self.sound_manager.play_sound("button")  # Using button sound for arrow shoot
             print(f"[Arrow] Shot arrow from {arrow_pos} in direction {arrow_direction}")
 
     def check_arrow_hits(self):
@@ -773,24 +803,102 @@ class Game:
                     f"[Combat] Wumpus hit Player for {damage} damage! Player HP: {self.player.health}/{self.player.max_health}"
                 )
 
-                # Check if Player died
-                if not self.player.is_alive:
-                    self.game_state = GameState.GAME_OVER
-                    self.game_end_time = pygame.time.get_ticks()
-                    self.death_reason = "Defeated by the Wumpus!"
-                    self.sound_manager.stop_footstep_loop()
-                    self.sound_manager.play_sound("game_over")
-                    print("GAME OVER - Player defeated by Wumpus!")
-                    return  # Exit after death
+            # Check if Player died
+            if not self.player.is_alive:
+                self.game_state = GameState.GAME_OVER
+                self.game_end_time = pygame.time.get_ticks()
+                self.death_reason = "Defeated by the Wumpus!"
+                self.sound_manager.stop_music()
+                self.sound_manager.play_sound("game_over")
+                print("GAME OVER - Player defeated by Wumpus!")
 
-    def render_lighting(self):
-        """Render the lighting system (flashlight and darkness)."""
+    def draw_flashlight(self):
+        """Draw a directional flashlight beam based on player facing direction."""
+        darkness = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        darkness.fill((0, 0, 0, 240))  # darkness alpha 240–255 for cave
+
+        beam_length = 450
+        beam_angle = 50  # cone width
+        light_color = (255, 255, 200)
         player_screen_pos = self.player.rect.center - self.all_sprites.offset
-        player_world_pos = self.player.rect.center
+        px, py = player_screen_pos
 
-        self.lighting_system.render(
-            self.screen, player_screen_pos, player_world_pos, self.player.facing
+        # --- Create cone beam surface ---
+        beam_surface = pygame.Surface(
+            (beam_length * 2, beam_length * 2), pygame.SRCALPHA
         )
+        cx, cy = beam_length, beam_length
+
+        # Draw cone shape filled with light color
+        cone_points = [(cx, cy)]
+        for a in range(-beam_angle // 2, beam_angle // 2 + 1, 1):
+            rad = math.radians(a)
+            x = cx + math.cos(rad) * beam_length
+            y = cy + math.sin(rad) * beam_length
+            cone_points.append((x, y))
+        pygame.draw.polygon(beam_surface, (255, 255, 200, 220), cone_points)
+
+        # --- Add directional gradient inside the cone (fades outward) ---
+        gradient = pygame.Surface((beam_length * 2, beam_length * 2), pygame.SRCALPHA)
+        for i in range(beam_length):
+            alpha = int(255 * (1 - (i / beam_length)))
+            pygame.draw.line(
+                gradient, (255, 255, 180, alpha // 3), (cx, cy), (cx + i, cy), 3
+            )
+        beam_surface.blit(gradient, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # --- Rotate cone based on facing direction (supports 8 directions) ---
+        facing = self.player.facing
+        rotation = 0
+
+        # Map all 8 directions to rotation angles
+        # 0° = right, 90° = up, 180° = left, 270° = down
+        if facing == "right":
+            rotation = 0
+        elif facing == "right_up":
+            rotation = 45
+        elif facing == "up":
+            rotation = 90
+        elif facing == "left_up":
+            rotation = 135
+        elif facing == "left":
+            rotation = 180
+        elif facing == "left_down":
+            rotation = 225
+        elif facing == "down":
+            rotation = 270
+        elif facing == "right_down":
+            rotation = 315
+        else:
+            rotation = 0  # Default to right if unknown
+
+        rotated_beam = pygame.transform.rotate(beam_surface, rotation)
+        beam_rect = rotated_beam.get_rect(center=(px, py))
+
+        # --- Subtract light cone from darkness ---
+        darkness.blit(rotated_beam, beam_rect, special_flags=pygame.BLEND_RGBA_SUB)
+
+        # --- Add subtle player glow (small, dim circle) ---
+        glow_radius = 60
+        glow_surface = pygame.Surface(
+            (glow_radius * 2, glow_radius * 2), pygame.SRCALPHA
+        )
+        for r in range(glow_radius, 0, -4):
+            alpha = max(0, 180 - (r / glow_radius) * 180)
+            pygame.draw.circle(
+                glow_surface,
+                (255, 255, 200, int(alpha / 2)),
+                (glow_radius, glow_radius),
+                r,
+            )
+        darkness.blit(
+            glow_surface,
+            (px - glow_radius, py - glow_radius),
+            special_flags=pygame.BLEND_RGBA_SUB,
+        )
+
+        # --- Draw final result ---
+        self.screen.blit(darkness, (0, 0))
 
     def run(self):
         while self.running:
@@ -803,45 +911,28 @@ class Game:
                 if event.type == pygame.KEYDOWN:
                     # Main Menu controls
                     if self.game_state == GameState.MAIN_MENU:
-                        if event.key == pygame.K_UP:
-                            self.sound_manager.play_sound("button", 0.3)
-                            self.menu_selection = (self.menu_selection - 1) % len(
-                                self.menu_options
-                            )
-                        elif event.key == pygame.K_DOWN:
-                            self.sound_manager.play_sound("button", 0.3)
-                            self.menu_selection = (self.menu_selection + 1) % len(
-                                self.menu_options
-                            )
-                        elif (
-                            event.key == pygame.K_RETURN or event.key == pygame.K_SPACE
-                        ):
+                        action, new_state = self.main_menu.handle_event(event)
+                        if action == "start_game":
                             self.sound_manager.play_sound("button")
-                            if self.menu_selection == 0:  # Start Game
-                                self.initialize_game()
-                            elif self.menu_selection == 1:  # Controls
-                                self.game_state = GameState.CONTROLS
-                            elif self.menu_selection == 2:  # Quit
-                                self.running = False
+                            self.initialize_game()
+                        elif action == "quit":
+                            self.running = False
+                        elif new_state:
+                            self.sound_manager.play_sound("button")
+                            self.game_state = new_state
 
                     # Controls screen
                     elif self.game_state == GameState.CONTROLS:
-                        if event.key == pygame.K_ESCAPE:
-                            self.sound_manager.play_sound("button")
-                            self.game_state = GameState.MAIN_MENU
-                            # Restart menu music when returning to main menu
-                            self.sound_manager.play_menu_music()
+                        new_state = self.controls_screen.handle_event(event)
+                        if new_state:
+                            self.game_state = new_state
 
                     # In-game controls
                     elif self.game_state == GameState.PLAYING:
                         if event.key == pygame.K_ESCAPE:
                             self.game_state = GameState.MAIN_MENU
-                            # Restart menu music when returning to main menu
+                            self.sound_manager.stop_music()
                             self.sound_manager.play_menu_music()
-                        elif event.key == pygame.K_r:
-                            # Restart the game
-                            self.sound_manager.stop_all_sounds()
-                            self.initialize_game()
                         elif event.key == pygame.K_f:
                             self.debug_mode = not self.debug_mode
                             print(f"Debug mode: {self.debug_mode}")
@@ -858,13 +949,10 @@ class Game:
                     # Game over / Victory screens
                     else:
                         if event.key == pygame.K_r:
-                            # Stop game_over sound before restarting
-                            self.sound_manager.stop_all_sounds()
                             self.initialize_game()
                         elif event.key == pygame.K_ESCAPE:
-                            self.sound_manager.stop_all_sounds()
                             self.game_state = GameState.MAIN_MENU
-                            # Restart menu music when returning to main menu
+                            self.sound_manager.stop_music()
                             self.sound_manager.play_menu_music()
 
             # Update game logic based on state
@@ -881,11 +969,20 @@ class Game:
                     self.game_end_time = pygame.time.get_ticks()
                     self.death_reason = "Time's up!"
                     self.player.is_alive = False
-                    self.sound_manager.stop_footstep_loop()
+                    self.sound_manager.stop_music()
                     self.sound_manager.play_sound("game_over")
                     print("GAME OVER - Time's up!")
                 else:
                     # Only update game if time hasn't run out
+                    # Check if player is in water (apply slowdown before movement)
+                    self.check_player_in_water()
+                    
+                    # Update Wumpus AI first (before sprite group update)
+                    if self.wumpus.is_alive:
+                        player_center = pygame.math.Vector2(
+                            self.player.hitbox_rect.center
+                        )
+                        self.wumpus.ai_update(player_center, dt)
                     # Update sound system
                     self.sound_manager.update()
                     
@@ -932,15 +1029,15 @@ class Game:
 
             # Draw based on game state
             if self.game_state == GameState.MAIN_MENU:
-                self.draw_main_menu()
+                self.main_menu.draw()
 
             elif self.game_state == GameState.CONTROLS:
-                self.draw_controls_screen()
+                self.controls_screen.draw()
 
             elif self.game_state == GameState.PLAYING and self.game_initialized:
                 # Draw game world
                 self.all_sprites.draw(self.screen, self.player)
-                self.render_lighting()
+                self.draw_flashlight()
 
                 # Debug visualization (with camera offset) - only in PLAYING state
                 if self.debug_mode and self.game_initialized:
@@ -955,6 +1052,11 @@ class Game:
                         offset_rect = sprite.rect.copy()
                         offset_rect.topleft -= offset
                         pygame.draw.rect(self.screen, (255, 255, 0), offset_rect, 2)
+
+                    for sprite in self.water_sprites:
+                        offset_rect = sprite.rect.copy()
+                        offset_rect.topleft -= offset
+                        pygame.draw.rect(self.screen, (0, 150, 255), offset_rect, 2)
 
                     offset_hitbox = self.player.hitbox_rect.copy()
                     offset_hitbox.topleft -= offset
@@ -1165,32 +1267,114 @@ class Game:
 
         pygame.quit()
 
-    def draw_main_menu(self):
-        """Draw the main menu screen"""
-        self.menu_screens.draw_main_menu(self.menu_selection, self.menu_options)
-
-    def draw_controls_screen(self):
-        """Draw the controls/how to play screen"""
-        self.menu_screens.draw_controls_screen()
-
     def draw_victory_screen(self):
         """Draw victory screen with stats"""
-        elapsed_time = (self.game_end_time - self.game_start_time) / 1000.0
-        game_stats = {
-            "elapsed_time": elapsed_time,
-            "player_health": self.player.health,
-            "player_max_health": self.player.max_health,
-        }
-        self.menu_screens.draw_victory_screen(game_stats)
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+
+        # Calculate game stats
+        elapsed_time = (
+            self.game_end_time - self.game_start_time
+        ) / 1000.0  # Convert to seconds
+        minutes = int(elapsed_time // 60)
+        seconds = int(elapsed_time % 60)
+
+        # Fonts
+        title_font = get_pixel_font(96)
+        font = get_pixel_font(48)
+        small_font = get_pixel_font(36)
+
+        # Title
+        title_text = title_font.render("VICTORY!", True, (255, 215, 0))
+        title_rect = title_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 150)
+        )
+        self.screen.blit(title_text, title_rect)
+
+        # Success message
+        success_text = font.render("Escaped with the treasure!", True, (100, 255, 100))
+        success_rect = success_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 80)
+        )
+        self.screen.blit(success_text, success_rect)
+
+        # Stats
+        time_text = small_font.render(
+            f"Escape Time: {minutes:02d}:{seconds:02d}", True, (255, 255, 255)
+        )
+        time_rect = time_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 10)
+        )
+        self.screen.blit(time_text, time_rect)
+
+        health_text = font.render(
+            f"Health Remaining: {self.player.health}/{self.player.max_health}",
+            True,
+            (0, 255, 0),
+        )
+        health_rect = health_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20)
+        )
+        self.screen.blit(health_text, health_rect)
+
+        # Restart prompt
+        restart_text = small_font.render("Press R to Restart", True, (200, 200, 200))
+        restart_rect = restart_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 120)
+        )
+        self.screen.blit(restart_text, restart_rect)
 
     def draw_game_over_screen(self):
         """Draw game over screen"""
-        elapsed_time = (self.game_end_time - self.game_start_time) / 1000.0
-        game_stats = {
-            "elapsed_time": elapsed_time,
-            "death_reason": self.death_reason if self.death_reason else "You died!",
-        }
-        self.menu_screens.draw_game_over_screen(game_stats)
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+
+        # Calculate game stats
+        elapsed_time = (
+            self.game_end_time - self.game_start_time
+        ) / 1000.0  # Convert to seconds
+        minutes = int(elapsed_time // 60)
+        seconds = int(elapsed_time % 60)
+
+        # Fonts
+        title_font = get_pixel_font(96)
+        font = get_pixel_font(48)
+        small_font = get_pixel_font(36)
+
+        # Title
+        title_text = title_font.render("GAME OVER", True, (255, 0, 0))
+        title_rect = title_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 150)
+        )
+        self.screen.blit(title_text, title_rect)
+
+        # Death message
+        death_message = self.death_reason if self.death_reason else "You died!"
+        death_text = font.render(death_message, True, (255, 100, 100))
+        death_rect = death_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50)
+        )
+        self.screen.blit(death_text, death_rect)
+
+        # Stats
+        time_text = small_font.render(
+            f"Survived: {minutes:02d}:{seconds:02d}", True, (200, 200, 200)
+        )
+        time_rect = time_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 20)
+        )
+        self.screen.blit(time_text, time_rect)
+
+        # Restart prompt
+        restart_text = small_font.render("Press R to Restart", True, (200, 200, 200))
+        restart_rect = restart_text.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 120)
+        )
+        self.screen.blit(restart_text, restart_rect)
 
     def restart(self):
         """Restart the game by reinitializing"""

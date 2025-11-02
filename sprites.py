@@ -40,6 +40,21 @@ class FallZone(pygame.sprite.Sprite):
         self.image.set_alpha(0)  # Make invisible (change to 128 for debugging)
         self.rect = self.image.get_rect(topleft=pos)
 
+
+class WaterZone(pygame.sprite.Sprite):
+    """Water zones that slow down player movement"""
+    def __init__(self, pos, size, *groups):
+        super().__init__(*groups)
+        
+        # Ensure position and size are integers
+        pos = (int(round(pos[0])), int(round(pos[1])))
+        size = (max(1, int(round(size[0]))), max(1, int(round(size[1]))))
+        
+        self.image = pygame.Surface(size)
+        self.image.fill('cyan')
+        self.image.set_alpha(0)  # Make invisible (change to 128 for debugging)
+        self.rect = self.image.get_rect(topleft=pos)
+
 class Treasure(pygame.sprite.Sprite):
     """Gold treasure collectible - main objective"""
     def __init__(self, pos, groups):

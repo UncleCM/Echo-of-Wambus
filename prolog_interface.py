@@ -39,6 +39,11 @@ class PrologEngine:
         query = f"add_fall_zone({x}, {y}, {w}, {h})"
         self._query(query)
     
+    def add_water_zone(self, x, y, w, h):
+        """Add a water zone to Prolog knowledge base"""
+        query = f"add_water_zone({x}, {y}, {w}, {h})"
+        self._query(query)
+    
     def check_collision(self, x, y, w, h):
         query = f"check_collision({x}, {y}, {w}, {h})"
         results = self._query(query)
@@ -49,6 +54,15 @@ class PrologEngine:
         results = self._query(query)
         return len(results) > 0
     
+    def check_water(self, x, y, w, h, feet_height=10):
+        """Check if player feet are standing in any water zone"""
+        query = f"check_water({x}, {y}, {w}, {h}, {feet_height})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    # =========================================================================
+    # NEW LOGIC: MOVEMENT RESOLUTION INTERFACE
+    # =========================================================================
     def resolve_movement(self, current_x, current_y, delta_x, delta_y, w, h):
         query = f"resolve_movement({current_x}, {current_y}, {delta_x}, {delta_y}, {w}, {h}, FinalX, FinalY)"
         results = self._query(query)
