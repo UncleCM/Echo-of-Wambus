@@ -595,6 +595,170 @@ count_safe_positions(Count) :-
     length(Positions, Count).
 
 % ============================================================================
+% GAME STATE MANAGEMENT SYSTEM
+% ============================================================================
+
+:- dynamic game_state/1.          % playing, paused, game_over_death, game_over_timeout, victory
+:- dynamic time_remaining/1.       % เวลาที่เหลือ (seconds)
+:- dynamic player_health/1.        % HP ของ player (0-100)
+:- dynamic player_inventory/2.     % inventory(Arrows, Rocks)
+:- dynamic player_max_inventory/2. % max_inventory(MaxArrows, MaxRocks)
+
+% Initialize complete game state
+init_game_state :-
+    retractall(game_state(_)),
+    retractall(time_remaining(_)),
+    retractall(player_health(_)),
+    retractall(player_inventory(_, _)),
+    retractall(player_max_inventory(_, _)),
+    asserta(game_state(playing)),
+    asserta(time_remaining(180.0)),      % 3 minutes
+    asserta(player_health(100)),
+    asserta(player_inventory(3, 3)),      % Start: 3 arrows, 3 rocks
+    asserta(player_max_inventory(10, 10)). % Max: 10 arrows, 10 rocks
+
+% Get current game state
+get_game_state(State) :-
+    game_state(State).
+
+% Set game state
+set_game_state(NewState) :-
+    retractall(game_state(_)),
+    asserta(game_state(NewState)).
+
+% Update time (called every frame with delta time)
+update_time(DeltaTime) :-
+    time_remaining(Current),
+    New is max(0, Current - DeltaTime),
+    retract(time_remaining(Current)),
+    asserta(time_remaining(New)),
+    % Check timeout
+    (New =< 0 -> set_game_state(game_over_timeout) ; true).
+
+% Get time remaining
+get_time_remaining(Time) :-
+    time_remaining(Time).
+
+% Get player health
+get_player_health(HP) :-
+    player_health(HP).
+
+% Damage player
+damage_player(Amount) :-
+    player_health(Current),
+    New is max(0, Current - Amount),
+    retract(player_health(Current)),
+    asserta(player_health(New)),
+    % Check death
+    (New =< 0 -> set_game_state(game_over_death) ; true).
+
+% Heal player
+heal_player(Amount) :-
+    player_health(Current),
+    New is min(100, Current + Amount),
+    retract(player_health(Current)),
+    asserta(player_health(New)).
+
+% Set player health directly
+set_player_health(HP) :-
+    retractall(player_health(_)),
+    Clamped is max(0, min(100, HP)),
+    asserta(player_health(Clamped)).
+
+% Get inventory
+get_player_inventory(Arrows, Rocks) :-
+    player_inventory(Arrows, Rocks).
+
+% Use arrow (returns true if had arrow, false if no arrows)
+use_arrow :-
+    player_inventory(Arrows, Rocks),
+    Arrows > 0,
+    NewArrows is Arrows - 1,
+    retract(player_inventory(Arrows, Rocks)),
+    asserta(player_inventory(NewArrows, Rocks)).
+
+% Use rock (returns true if had rock, false if no rocks)
+use_rock :-
+    player_inventory(Arrows, Rocks),
+    Rocks > 0,
+    NewRocks is Rocks - 1,
+    retract(player_inventory(Arrows, Rocks)),
+    asserta(player_inventory(Arrows, NewRocks)).
+
+% Add arrows (respects max limit)
+add_arrows(Amount) :-
+    player_inventory(Arrows, Rocks),
+    player_max_inventory(MaxArrows, _),
+    NewArrows is min(MaxArrows, Arrows + Amount),
+    retract(player_inventory(Arrows, Rocks)),
+    asserta(player_inventory(NewArrows, Rocks)).
+
+% Add rocks (respects max limit)
+add_rocks(Amount) :-
+    player_inventory(Arrows, Rocks),
+    player_max_inventory(_, MaxRocks),
+    NewRocks is min(MaxRocks, Rocks + Amount),
+    retract(player_inventory(Arrows, Rocks)),
+    asserta(player_inventory(Arrows, NewRocks)).
+
+% Check if player can use arrow
+can_use_arrow :-
+    player_inventory(Arrows, _),
+    Arrows > 0.
+
+% Check if player can use rock
+can_use_rock :-
+    player_inventory(_, Rocks),
+    Rocks > 0.
+
+% Check victory condition (has treasure + at exit)
+check_victory_condition :-
+    treasure_collected(true),
+    exit_unlocked(true),
+    player_position(PX, PY),
+    exit_position(EX, EY),
+    % Check if player is at exit (within 50 pixels)
+    DX is PX - EX,
+    DY is PY - EY,
+    DistSq is DX * DX + DY * DY,
+    DistSq < 2500,  % 50 * 50
+    set_game_state(victory).
+
+% Check all game over conditions
+check_game_over_conditions :-
+    % Check death
+    (player_health(HP), HP =< 0 -> 
+        set_game_state(game_over_death)
+    ;
+    % Check timeout
+     time_remaining(Time), Time =< 0 ->
+        set_game_state(game_over_timeout)
+    ;
+    % Check victory
+     treasure_collected(true), exit_unlocked(true),
+     player_position(PX, PY), exit_position(EX, EY),
+     DX is PX - EX, DY is PY - EY,
+     DistSq is DX * DX + DY * DY,
+     DistSq < 2500 ->
+        set_game_state(victory)
+    ;
+        true  % Game continues
+    ).
+
+% Check if game is over (any end state)
+is_game_over :-
+    game_state(State),
+    member(State, [game_over_death, game_over_timeout, victory]).
+
+% Get game over reason
+get_game_over_reason(Reason) :-
+    game_state(State),
+    (State = game_over_death -> Reason = death
+    ; State = game_over_timeout -> Reason = timeout
+    ; State = victory -> Reason = victory
+    ; Reason = none).
+
+% ============================================================================
 % HELPER PREDICATES FOR GAME LOGIC
 % ============================================================================
 

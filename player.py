@@ -202,6 +202,10 @@ class Player(Entity):
         self.is_attacking = True
         self.attack_timer = self.attack_cooldown
         self.arrows -= 1
+        
+        # Update Prolog inventory
+        if self.prolog and self.prolog.available:
+            self.prolog.use_arrow()
 
         print(f"[Player] Shot arrow! Arrows remaining: {self.arrows}/{self.max_arrows}")
         return arrow_direction
@@ -210,6 +214,11 @@ class Player(Entity):
         """Pick up arrows from ArrowPickup"""
         if self.arrows < self.max_arrows:
             self.arrows = min(self.arrows + amount, self.max_arrows)
+            
+            # Update Prolog inventory
+            if self.prolog and self.prolog.available:
+                self.prolog.add_arrows(amount)
+            
             print(
                 f"[Player] Picked up {amount} arrow(s)! Total: {self.arrows}/{self.max_arrows}"
             )
@@ -278,6 +287,10 @@ class Player(Entity):
         self.rocks -= 1
         self.last_throw_time = current_time
         
+        # Update Prolog inventory
+        if self.prolog and self.prolog.available:
+            self.prolog.use_rock()
+        
         print(f"[Player] Threw rock! Rocks remaining: {self.rocks}/{self.max_rocks}")
         return direction
     
@@ -285,6 +298,11 @@ class Player(Entity):
         """Pick up rocks from RockPickup"""
         if self.rocks < self.max_rocks:
             self.rocks = min(self.rocks + amount, self.max_rocks)
+            
+            # Update Prolog inventory
+            if self.prolog and self.prolog.available:
+                self.prolog.add_rocks(amount)
+            
             print(f"[Player] Picked up {amount} rock(s)! Total: {self.rocks}/{self.max_rocks}")
             return True
         else:

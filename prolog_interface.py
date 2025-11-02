@@ -422,3 +422,171 @@ class PrologEngine:
         query = f"is_near_pit({x}, {y}, {danger_radius})"
         results = self._query(query)
         return len(results) > 0
+    
+    # =========================================================================
+    # GAME STATE MANAGEMENT
+    # =========================================================================
+    
+    def init_game_state(self):
+        """Initialize game state (HP, inventory, time, etc.)"""
+        query = "init_game_state"
+        self._query(query)
+        print("[Prolog] Game state initialized")
+    
+    def get_game_state(self):
+        """
+        Get current game state
+        Returns: 'playing', 'paused', 'game_over_death', 'game_over_timeout', 'victory'
+        """
+        query = "get_game_state(State)"
+        results = self._query(query)
+        return results[0]['State'] if results else 'playing'
+    
+    def set_game_state(self, state):
+        """Set game state"""
+        query = f"set_game_state({state})"
+        self._query(query)
+    
+    def update_time(self, delta_time):
+        """Update game time (decrements time_remaining)"""
+        query = f"update_time({delta_time})"
+        self._query(query)
+    
+    def get_time_remaining(self):
+        """Get remaining time in seconds"""
+        query = "get_time_remaining(Time)"
+        results = self._query(query)
+        if results:
+            try:
+                return float(results[0]['Time'])
+            except (KeyError, ValueError, TypeError):
+                return 180.0
+        return 180.0
+    
+    def get_player_health(self):
+        """Get player health (0-100)"""
+        query = "get_player_health(HP)"
+        results = self._query(query)
+        if results:
+            try:
+                return int(results[0]['HP'])
+            except (KeyError, ValueError, TypeError):
+                return 100
+        return 100
+    
+    def damage_player(self, amount):
+        """
+        Damage player (automatically checks for death)
+        Sets game state to game_over_death if HP <= 0
+        """
+        query = f"damage_player({amount})"
+        self._query(query)
+    
+    def heal_player(self, amount):
+        """Heal player (max 100 HP)"""
+        query = f"heal_player({amount})"
+        self._query(query)
+    
+    def set_player_health(self, hp):
+        """Set player health directly"""
+        query = f"set_player_health({hp})"
+        self._query(query)
+    
+    def get_player_inventory(self):
+        """
+        Get player inventory
+        Returns: (arrows, rocks) tuple
+        """
+        query = "get_player_inventory(Arrows, Rocks)"
+        results = self._query(query)
+        if results:
+            try:
+                arrows = int(results[0]['Arrows'])
+                rocks = int(results[0]['Rocks'])
+                return (arrows, rocks)
+            except (KeyError, ValueError, TypeError):
+                return (3, 3)
+        return (3, 3)
+    
+    def use_arrow(self):
+        """
+        Use one arrow from inventory
+        Returns: True if arrow was used, False if no arrows
+        """
+        query = "use_arrow"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def use_rock(self):
+        """
+        Use one rock from inventory
+        Returns: True if rock was used, False if no rocks
+        """
+        query = "use_rock"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def add_arrows(self, amount):
+        """Add arrows to inventory (respects max limit)"""
+        query = f"add_arrows({amount})"
+        self._query(query)
+    
+    def add_rocks(self, amount):
+        """Add rocks to inventory (respects max limit)"""
+        query = f"add_rocks({amount})"
+        self._query(query)
+    
+    def can_use_arrow(self):
+        """Check if player has arrows"""
+        query = "can_use_arrow"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def can_use_rock(self):
+        """Check if player has rocks"""
+        query = "can_use_rock"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def has_treasure(self):
+        """Check if player has collected treasure"""
+        query = "treasure_collected(true)"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def is_exit_unlocked(self):
+        """Check if exit is unlocked"""
+        query = "exit_unlocked(true)"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def check_victory_condition(self):
+        """Check if player won (has treasure + at exit)"""
+        query = "check_victory_condition"
+        self._query(query)
+    
+    def check_game_over_conditions(self):
+        """Check all game over conditions (death, timeout, victory)"""
+        query = "check_game_over_conditions"
+        self._query(query)
+    
+    def is_game_over(self):
+        """Check if game is over (any end state)"""
+        query = "is_game_over"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def get_game_over_reason(self):
+        """
+        Get reason for game over
+        Returns: String reason if game is over, None if still playing
+        """
+        query = "get_game_over_reason(Reason)"
+        results = self._query(query)
+        if results:
+            reason = results[0]['Reason']
+            # Return None if game is still playing
+            if reason == 'none':
+                return None
+            return reason
+        return None

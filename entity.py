@@ -191,6 +191,10 @@ class Entity(pygame.sprite.Sprite):
             self.is_alive = False
             self.on_death()
         
+        # Update Prolog if this is the player
+        if self.entity_type == "player" and self.prolog and self.prolog.available:
+            self.prolog.damage_player(int(actual_damage))
+        
         return actual_damage
     
     def heal(self, amount):
@@ -201,6 +205,10 @@ class Entity(pygame.sprite.Sprite):
             return
         
         self.health = min(self.health + amount, self.max_health)
+        
+        # Update Prolog if this is the player
+        if self.entity_type == "player" and self.prolog and self.prolog.available:
+            self.prolog.heal_player(int(amount))
     
     def on_death(self):
         """

@@ -42,16 +42,18 @@ class Game:
 
     def initialize_game(self):
         """Initialize/reset the game (called when starting a new game)"""
-        # Treasure & Exit system
-        self.has_treasure = False
-        self.exit_unlocked = False
-        self.time_limit = 180  # 3 minutes in seconds
-        self.time_remaining = self.time_limit
-
         # Initialize Prolog engine (only once)
         if not hasattr(self, "prolog"):
             self.prolog = PrologEngine()
             print("✓ Prolog engine initialized")
+        
+        # Initialize Prolog game state (HP, inventory, time, etc.)
+        if self.prolog and self.prolog.available:
+            self.prolog.init_game_state()
+        
+        # Legacy Python variables (for backward compatibility - will be removed later)
+        self.has_treasure = False
+        self.exit_unlocked = False
 
         # Create sprite groups
         self.all_sprites = AllSprites()
@@ -131,9 +133,15 @@ class Game:
         print(f"Collision boxes in Prolog: {coll_count}")
         print(f"Fall zones in Prolog: {fall_count}")
         print(f"Player position: ({self.player.rect.x}, {self.player.rect.y})")
-        print(
-            f"Is safe position: {self.prolog.is_safe_position(self.player.rect.x, self.player.rect.y, self.player.hitbox_rect.width, self.player.hitbox_rect.height)}"
-        )
+        
+        # Display Prolog game state
+        if self.prolog and self.prolog.available:
+            hp = self.prolog.get_player_health()
+            arrows, rocks = self.prolog.get_player_inventory()
+            time_left = self.prolog.get_time_remaining()
+            print(f"Player HP: {hp}/100")
+            print(f"Player Inventory: {arrows} arrows, {rocks} rocks")
+            print(f"Time Remaining: {time_left:.1f}s")
 
         self.game_start_time = pygame.time.get_ticks()
         self.game_state = GameState.PLAYING
@@ -210,7 +218,7 @@ class Game:
         wumpus_count = random.randint(3, 4)
         spawned = 0
         spawned_positions = []
-        min_distance = 250
+        min_distance = 800
         
         # Use Prolog to find safe positions that are far apart
         for i in range(wumpus_count):
@@ -535,7 +543,14 @@ class Game:
 
     def check_treasure_collection(self):
         """Check if player opens treasure chests (press E near chest)"""
-        if not self.has_treasure and len(self.treasure_sprites) > 0:
+        # Check if treasure already collected using Prolog
+        has_treasure = False
+        if self.prolog and self.prolog.available:
+            has_treasure = self.prolog.has_treasure()
+        else:
+            has_treasure = self.has_treasure
+        
+        if not has_treasure and len(self.treasure_sprites) > 0:
             # Check if player presses E near any chest
             keys = pygame.key.get_pressed()
             
@@ -554,7 +569,7 @@ class Game:
                     
                     if result == 'treasure':
                         # Real treasure found!
-                        self.has_treasure = True
+                        self.has_treasure = True  # Legacy Python variable
                         
                         # Unlock exit in both Python and Prolog
                         if len(self.exit_sprites) > 0:
@@ -923,23 +938,24 @@ class Game:
 
             # Update game logic based on state
             if self.game_state == GameState.PLAYING and self.game_initialized:
-                # Update time remaining
-                elapsed_time = (
-                    pygame.time.get_ticks() - self.game_start_time
-                ) / 1000.0  # seconds
-                self.time_remaining = self.time_limit - elapsed_time
-
-                # Check timeout
-                if self.time_remaining <= 0:
-                    self.game_state = GameState.GAME_OVER
-                    self.game_end_time = pygame.time.get_ticks()
-                    self.death_reason = "Time's up!"
-                    self.player.is_alive = False
-                    self.sound_manager.stop_music()
-                    self.sound_manager.play_sound("game_over")
-                    print("GAME OVER - Time's up!")
-                else:
-                    # Only update game if time hasn't run out
+                # Update time in Prolog (instead of Python)
+                if self.prolog and self.prolog.available:
+                    dt = self.clock.get_time() / 1000.0  # Convert ms to seconds
+                    self.prolog.update_time(dt)
+                    
+                    # Check game over conditions in Prolog
+                    game_over_reason = self.prolog.get_game_over_reason()
+                    if game_over_reason:
+                        self.game_state = GameState.GAME_OVER
+                        self.game_end_time = pygame.time.get_ticks()
+                        self.death_reason = game_over_reason
+                        self.player.is_alive = False
+                        self.sound_manager.stop_music()
+                        self.sound_manager.play_sound("game_over")
+                        print(f"GAME OVER - {game_over_reason}")
+                
+                # Only update game if not game over
+                if self.game_state == GameState.PLAYING:
                     # Check if player is in water (apply slowdown before movement)
                     self.check_player_in_water()
                     
@@ -1132,11 +1148,16 @@ class Game:
                 # Draw HUD (Timer, arrows, treasure, and exit status)
                 font = get_pixel_font(36)
 
-                # Timer (top center)
-                minutes = int(self.time_remaining // 60)
-                seconds = int(self.time_remaining % 60)
+                # Timer (top center) - Use Prolog time
+                if self.prolog and self.prolog.available:
+                    time_remaining = self.prolog.get_time_remaining()
+                else:
+                    time_remaining = 0
+                
+                minutes = int(time_remaining // 60)
+                seconds = int(time_remaining % 60)
                 timer_color = (
-                    (255, 255, 255) if self.time_remaining > 30 else (255, 100, 100)
+                    (255, 255, 255) if time_remaining > 30 else (255, 100, 100)
                 )  # Red if <30s
                 timer_text = font.render(
                     f"Time: {minutes:02d}:{seconds:02d}", True, timer_color
@@ -1155,18 +1176,30 @@ class Game:
                 )
                 self.screen.blit(arrow_text, (20, 20))
 
-                # Treasure status (top left, below arrows)
-                treasure_status = "✓ Treasure" if self.has_treasure else "⬜ Treasure"
-                treasure_color = (255, 215, 0) if self.has_treasure else (150, 150, 150)
+                # Treasure status (top left, below arrows) - Use Prolog state
+                has_treasure = False
+                if self.prolog and self.prolog.available:
+                    has_treasure = self.prolog.has_treasure()
+                else:
+                    has_treasure = self.has_treasure
+                
+                treasure_status = "✓ Treasure" if has_treasure else "⬜ Treasure"
+                treasure_color = (255, 215, 0) if has_treasure else (150, 150, 150)
                 treasure_text = font.render(treasure_status, True, treasure_color)
                 self.screen.blit(treasure_text, (20, 60))
 
-                # Exit status (top left, below treasure)
-                if self.has_treasure:
+                # Exit status (top left, below treasure) - Use Prolog state
+                if has_treasure:
+                    exit_unlocked = False
+                    if self.prolog and self.prolog.available:
+                        exit_unlocked = self.prolog.is_exit_unlocked()
+                    else:
+                        exit_unlocked = self.exit_unlocked
+                    
                     exit_status = (
-                        "🔓 Exit Unlocked!" if self.exit_unlocked else "🔒 Exit"
+                        "🔓 Exit Unlocked!" if exit_unlocked else "🔒 Exit"
                     )
-                    exit_color = (0, 255, 0) if self.exit_unlocked else (150, 150, 150)
+                    exit_color = (0, 255, 0) if exit_unlocked else (150, 150, 150)
                     exit_text = font.render(exit_status, True, exit_color)
                     self.screen.blit(exit_text, (20, 100))
 
