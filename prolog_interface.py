@@ -315,3 +315,110 @@ class PrologEngine:
         query = f"near_chest({player_x}, {player_y}, {interaction_radius})"
         results = self._query(query)
         return len(results) > 0
+    
+    # =========================================================================
+    # MAP SYSTEM - Enhanced map queries and navigation
+    # =========================================================================
+    
+    def init_map_system(self, map_width, map_height, tile_width, tile_height, cell_size=32):
+        """Initialize map metadata in Prolog"""
+        query = f"init_map_system({map_width}, {map_height}, {tile_width}, {tile_height}, {cell_size})"
+        self._query(query)
+        print(f"[Prolog] Map system initialized: {map_width}x{map_height}, cell={cell_size}px")
+    
+    def build_navigation_grid(self):
+        """Build navigation grid from collision/fall data"""
+        query = "build_navigation_grid"
+        self._query(query)
+        
+        # Count cells by type
+        safe_count = self.count_grid_cells('safe')
+        wall_count = self.count_grid_cells('wall')
+        pit_count = self.count_grid_cells('pit')
+        water_count = self.count_grid_cells('water')
+        total = safe_count + wall_count + pit_count + water_count
+        
+        print(f"[Prolog] Navigation grid built: {total} cells total")
+        print(f"[Prolog]   Safe: {safe_count}, Walls: {wall_count}, Pits: {pit_count}, Water: {water_count}")
+    
+    def count_grid_cells(self, cell_type):
+        """Count grid cells of specific type"""
+        query = f"count_grid_cells({cell_type}, Count)"
+        results = self._query(query)
+        return results[0]['Count'] if results else 0
+    
+    def generate_safe_positions(self, entity_width=32, entity_height=32):
+        """Generate all safe positions and cache them in Prolog"""
+        query = f"generate_safe_positions({entity_width}, {entity_height})"
+        self._query(query)
+        
+        count = self.count_safe_positions()
+        print(f"[Prolog] Generated and cached {count} safe positions")
+        return count
+    
+    def count_safe_positions(self):
+        """Count cached safe positions"""
+        query = "count_safe_positions(Count)"
+        results = self._query(query)
+        return results[0]['Count'] if results else 0
+    
+    def get_random_safe_position(self):
+        """Get random safe position from Prolog cache"""
+        query = "random_safe_position(X, Y)"
+        results = self._query(query)
+        if results:
+            try:
+                return (int(results[0]['X']), int(results[0]['Y']))
+            except (KeyError, ValueError, TypeError):
+                return None
+        return None
+    
+    def get_safe_position_far_from(self, other_positions, min_distance=250):
+        """
+        Get safe position that's far from other positions
+        
+        Args:
+            other_positions: List of (x, y) tuples
+            min_distance: Minimum distance in pixels
+        
+        Returns:
+            (x, y) tuple or None if not found
+        """
+        if not other_positions:
+            return self.get_random_safe_position()
+        
+        # Convert positions to Prolog list format: [[X1, Y1], [X2, Y2], ...]
+        pos_list = str(other_positions).replace('(', '[').replace(')', ']')
+        
+        query = f"safe_position_far_from(X, Y, {pos_list}, {min_distance})"
+        results = self._query(query)
+        
+        if results:
+            try:
+                return (int(results[0]['X']), int(results[0]['Y']))
+            except (KeyError, ValueError, TypeError):
+                return None
+        return None
+    
+    def is_position_safe(self, x, y, width, height):
+        """Check if position is safe (no collision, no pit) - Prolog version"""
+        query = f"is_safe_position({x}, {y}, {width}, {height})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def get_nearest_pit_distance(self, x, y):
+        """Get distance to nearest pit"""
+        query = f"nearest_pit_distance({x}, {y}, Distance)"
+        results = self._query(query)
+        if results:
+            try:
+                return float(results[0]['Distance'])
+            except (KeyError, ValueError, TypeError):
+                return 999999.0
+        return 999999.0
+    
+    def is_near_pit(self, x, y, danger_radius=60):
+        """Check if position is near a pit"""
+        query = f"is_near_pit({x}, {y}, {danger_radius})"
+        results = self._query(query)
+        return len(results) > 0

@@ -7,6 +7,14 @@
 :- dynamic fall_zone/4.
 :- dynamic water_zone/4.
 
+% ======= NEW: Map System Facts =======
+:- dynamic map_size/2.           % map_size(Width, Height)
+:- dynamic tile_size/2.          % tile_size(TileW, TileH)
+:- dynamic grid_cell/3.          % grid_cell(GridX, GridY, Type) - Type: safe, wall, pit, water
+:- dynamic grid_size/2.          % grid_size(CellSize, [GridCountX, GridCountY])
+:- dynamic safe_position/2.      % safe_position(X, Y) - cached safe positions
+:- dynamic cached_path/3.        % cached_path(StartPos, GoalPos, Path) - pathfinding cache
+
 % Initialize game state
 init_game :-
     retractall(player_position(_, _)),
@@ -459,6 +467,132 @@ get_all_arrow_pickups(Pickups) :-
 % Get all rock pickups (for Python to query)
 get_all_rock_pickups(Pickups) :-
     findall([ID, X, Y], rock_pickup(ID, X, Y), Pickups).
+
+% ============================================================================
+% MAP SYSTEM - Enhanced map queries and navigation
+% ============================================================================
+
+% Initialize map metadata
+init_map_system(MapW, MapH, TileW, TileH, CellSize) :-
+    retractall(map_size(_, _)),
+    retractall(tile_size(_, _)),
+    retractall(grid_size(_, _)),
+    retractall(grid_cell(_, _, _)),
+    retractall(safe_position(_, _)),
+    retractall(cached_path(_, _, _)),
+    asserta(map_size(MapW, MapH)),
+    asserta(tile_size(TileW, TileH)),
+    GridCountX is ceiling(MapW / CellSize),
+    GridCountY is ceiling(MapH / CellSize),
+    asserta(grid_size(CellSize, [GridCountX, GridCountY])).
+
+% Build navigation grid from collision/fall data
+build_navigation_grid :-
+    grid_size(CellSize, [MaxX, MaxY]),
+    MaxGX is MaxX - 1,
+    MaxGY is MaxY - 1,
+    forall(
+        (
+            between(0, MaxGX, GX),
+            between(0, MaxGY, GY)
+        ),
+        classify_and_add_grid_cell(GX, GY, CellSize)
+    ).
+
+% Classify and add a single grid cell
+classify_and_add_grid_cell(GridX, GridY, CellSize) :-
+    WorldX is GridX * CellSize,
+    WorldY is GridY * CellSize,
+    HalfCell is CellSize // 2,
+    CenterX is WorldX + HalfCell,
+    CenterY is WorldY + HalfCell,
+    
+    % Classify cell type based on collision/fall/water
+    (   check_collision(CenterX, CenterY, CellSize, CellSize) ->
+        Type = wall
+    ;   check_fall(CenterX, CenterY, CellSize, CellSize, CellSize) ->
+        Type = pit
+    ;   check_water(CenterX, CenterY, CellSize, CellSize, CellSize) ->
+        Type = water
+    ;   Type = safe
+    ),
+    asserta(grid_cell(GridX, GridY, Type)).
+
+% Check if position is safe (no collision, no pit)
+is_safe_position(X, Y, Width, Height) :-
+    \+ check_collision(X, Y, Width, Height),
+    \+ check_fall(X, Y, Width, Height, 10).
+
+% Calculate nearest pit distance
+nearest_pit_distance(X, Y, Distance) :-
+    findall(D, (
+        fall_zone(PitX, PitY, PitW, PitH),
+        CenterX is PitX + PitW/2,
+        CenterY is PitY + PitH/2,
+        DX is X - CenterX,
+        DY is Y - CenterY,
+        D is sqrt(DX*DX + DY*DY)
+    ), Distances),
+    (   Distances = [] ->
+        Distance = 999999  % No pits in map
+    ;   min_list(Distances, Distance)
+    ).
+
+% Check if position is near a pit
+is_near_pit(X, Y, DangerRadius) :-
+    nearest_pit_distance(X, Y, Distance),
+    Distance < DangerRadius.
+
+% Generate all safe positions and cache them
+generate_safe_positions(EntityWidth, EntityHeight) :-
+    retractall(safe_position(_, _)),
+    map_size(MapW, MapH),
+    grid_size(CellSize, _),
+    MaxX is MapW - EntityWidth,
+    MaxY is MapH - EntityHeight,
+    Step is CellSize,
+    forall(
+        (
+            between(0, MaxX, X),
+            0 is X mod Step,
+            between(0, MaxY, Y),
+            0 is Y mod Step,
+            is_safe_position(X, Y, EntityWidth, EntityHeight),
+            \+ is_near_pit(X, Y, 60)
+        ),
+        asserta(safe_position(X, Y))
+    ).
+
+% Get random safe position from cache
+random_safe_position(X, Y) :-
+    findall([PX, PY], safe_position(PX, PY), Positions),
+    length(Positions, Count),
+    Count > 0,
+    random(0, Count, Index),
+    nth0(Index, Positions, [X, Y]).
+
+% Get safe position that's far from other positions
+safe_position_far_from(X, Y, OtherPositions, MinDistance) :-
+    safe_position(X, Y),
+    forall(
+        member([OtherX, OtherY], OtherPositions),
+        (
+            DX is X - OtherX,
+            DY is Y - OtherY,
+            Distance is sqrt(DX*DX + DY*DY),
+            Distance >= MinDistance
+        )
+    ).
+
+% Count grid cells by type
+count_grid_cells(Type, Count) :-
+    findall(_, grid_cell(_, _, Type), Cells),
+    length(Cells, Count).
+
+% Count safe positions
+count_safe_positions(Count) :-
+    findall(_, safe_position(_, _), Positions),
+    length(Positions, Count).
 
 % ============================================================================
 % HELPER PREDICATES FOR GAME LOGIC

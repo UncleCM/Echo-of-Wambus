@@ -68,7 +68,29 @@ class Game:
 
         self.setup()
         
+        # Initialize Prolog map system FIRST (before MapKnowledge)
+        if self.prolog and self.prolog.available:
+            # Get map dimensions
+            map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
+            map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
+            
+            # Initialize map system
+            self.prolog.init_map_system(
+                map_width=int(map_width),
+                map_height=int(map_height),
+                tile_width=self.tmx_map.tilewidth,
+                tile_height=self.tmx_map.tileheight,
+                cell_size=32
+            )
+            
+            # Build navigation grid from collision/fall/water data
+            self.prolog.build_navigation_grid()
+            
+            # Generate safe positions cache (for spawning)
+            self.prolog.generate_safe_positions(entity_width=32, entity_height=32)
+        
         # Map knowledge system (after setup to load tmx_map first)
+        # MapKnowledge can now use Prolog as backend if needed
         self.map_knowledge = MapKnowledge(
             self.tmx_map, 
             self.collision_sprites, 
@@ -182,41 +204,34 @@ class Game:
         return (fallback_x, fallback_y)
     
     def spawn_wumpus_pack(self):
-        """Spawn 3-4 Wumpus enemies at safe locations, spread far apart"""
+        """Spawn 3-4 Wumpus enemies using Prolog safe positions"""
         import random
         
-        wumpus_count = random.randint(3, 4)  # 3-4 ตัวสุ่ม
+        wumpus_count = random.randint(3, 4)
         spawned = 0
-        max_attempts = 200  # เพิ่มจำนวนครั้งที่พยายามให้มากขึ้น
-        spawned_positions = []  # เก็บตำแหน่งที่ spawn ไปแล้ว
-        min_distance_between_wumpus = 250  # ระยะห่างขั้นต่ำระหว่าง Wumpus (pixels) - ลดลงจาก 300 เพื่อความยืดหยุ่น
+        spawned_positions = []
+        min_distance = 250
         
-        # ใช้ MapKnowledge หาตำแหน่งปลอดภัย
-        while spawned < wumpus_count and max_attempts > 0:
-            # ใช้ระบบ safe random position ที่มีอยู่แล้ว
-            safe_pos = self.map_knowledge.get_safe_random_position()
+        # Use Prolog to find safe positions that are far apart
+        for i in range(wumpus_count):
+            if self.prolog and self.prolog.available:
+                # Try to get position far from others (Prolog method)
+                safe_pos = self.prolog.get_safe_position_far_from(
+                    spawned_positions,
+                    min_distance=min_distance
+                )
+                
+                # Fallback: random safe position if far position not found
+                if not safe_pos:
+                    safe_pos = self.prolog.get_random_safe_position()
+            else:
+                # Fallback: use MapKnowledge if Prolog unavailable
+                safe_pos = self.map_knowledge.get_safe_random_position()
             
             if safe_pos:
                 spawn_x, spawn_y = safe_pos
                 
-                # เช็คว่าไม่อยู่ใกล้หลุมเกินไป
-                if self.map_knowledge.is_near_pit(spawn_x, spawn_y, danger_radius=60):
-                    max_attempts -= 1
-                    continue
-                
-                # เช็คว่าห่างจาก Wumpus ตัวอื่นๆ พอ
-                too_close = False
-                for other_x, other_y in spawned_positions:
-                    distance = math.sqrt((spawn_x - other_x)**2 + (spawn_y - other_y)**2)
-                    if distance < min_distance_between_wumpus:
-                        too_close = True
-                        break
-                
-                if too_close:
-                    max_attempts -= 1
-                    continue
-                
-                # ตำแหน่งนี้ปลอดภัยและห่างพอ - spawn Wumpus
+                # Spawn Wumpus
                 wumpus = Wumpus(
                     (spawn_x, spawn_y),
                     [self.all_sprites, self.wumpus_sprites],
@@ -226,13 +241,13 @@ class Game:
                     self.sound_manager
                 )
                 spawned_positions.append((spawn_x, spawn_y))
-                print(f"[Wumpus {spawned+1}/{wumpus_count}] Spawned safely at ({spawn_x:.0f}, {spawn_y:.0f})")
+                print(f"[Wumpus {spawned+1}/{wumpus_count}] Spawned at ({spawn_x:.0f}, {spawn_y:.0f})")
                 spawned += 1
-            
-            max_attempts -= 1
+            else:
+                print(f"[Wumpus] Warning: Could not find safe position for Wumpus {spawned+1}/{wumpus_count}")
         
         if spawned < wumpus_count:
-            print(f"[Wumpus] Warning: Only spawned {spawned}/{wumpus_count} enemies (safe positions limited)")
+            print(f"[Wumpus] Warning: Only spawned {spawned}/{wumpus_count} enemies")
 
     def spawn_treasure(self):
         """Spawn treasure chest system (1 real, 2 mimics) using Prolog"""
