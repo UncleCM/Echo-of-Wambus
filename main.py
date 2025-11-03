@@ -446,6 +446,7 @@ class Game:
                 self.death_reason = "Fell into a pit!"
                 self.prolog.set_game_over(True)
                 self.sound_manager.stop_music()
+                self.sound_manager.stop_footstep_loop()  # Stop footstep sounds
                 self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Fell into a hole! (Prolog detected)")
                 return True
@@ -464,6 +465,9 @@ class Game:
             int(self.player.hitbox_rect.height),
             10,  # feet_height
         )
+        
+        # Update player's water state (for footstep sounds)
+        self.player.in_water = in_water
         
         # Store base speed if not already stored
         if not hasattr(self.player, '_base_speed'):
@@ -566,6 +570,7 @@ class Game:
                 self.game_state = GameState.VICTORY
                 self.game_end_time = pygame.time.get_ticks()
                 self.sound_manager.stop_music()
+                self.sound_manager.stop_footstep_loop()  # Stop footstep sounds
                 # Victory sound can be added here if available
                 print("VICTORY - Escaped with the treasure!")
 
@@ -786,6 +791,7 @@ class Game:
                 self.game_end_time = pygame.time.get_ticks()
                 self.death_reason = "Defeated by the Wumpus!"
                 self.sound_manager.stop_music()
+                self.sound_manager.stop_footstep_loop()  # Stop footstep sounds
                 self.sound_manager.play_sound("game_over")
                 print("GAME OVER - Player defeated by Wumpus!")
                 return
@@ -857,16 +863,12 @@ class Game:
                             print(f"Debug mode: {self.debug_mode}")
                         elif event.key == pygame.K_SPACE:
                             self.handle_arrow_shooting()
-                    
-                    # Rock throwing (E key - keyboard only!)
-                    if (
-                        event.key == pygame.K_e
-                        and self.game_state == GameState.PLAYING
-                    ):
-                        self.handle_rock_throw()
+                        elif event.key == pygame.K_e:
+                            # Rock throwing (E key)
+                            self.handle_rock_throw()
 
                     # Game over / Victory screens
-                    else:
+                    elif self.game_state in (GameState.GAME_OVER, GameState.VICTORY):
                         if event.key == pygame.K_r:
                             self.initialize_game()
                         elif event.key == pygame.K_ESCAPE:

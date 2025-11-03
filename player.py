@@ -19,6 +19,7 @@ class Player(Entity):
         # Sound manager reference
         self.sound_manager = sound_manager
         self.is_walking = False  # Track if player is currently walking
+        self.in_water = False  # Track if player is in water (for footstep sounds)
 
         # =========================================================================
         # PHASE 5.1: Arrow/Rock counts are READ-ONLY from Prolog
@@ -242,15 +243,23 @@ class Player(Entity):
         # PHASE 5.1: Prolog handles arrow addition (Python just logs)
         # =========================================================================
         if self.prolog and self.prolog.available:
+            # Check if player has space BEFORE adding
+            old_count = self.arrows
             self.prolog.add_arrows(amount)
+            new_count = self.arrows
             
-        # Read new count from Prolog for display
-        new_count = self.arrows
+            # Only print if arrows actually increased (had space)
+            if new_count > old_count:
+                print(
+                    f"[Player] Picked up {amount} arrow(s)! Total: {new_count}/{self.max_arrows}"
+                )
+                return True  # Had space
+            else:
+                # Already at max, pickup failed
+                return False
         
-        print(
-            f"[Player] Picked up {amount} arrow(s)! Total: {new_count}/{self.max_arrows}"
-        )
-        return new_count < self.max_arrows  # Return True if had space
+        # Fallback if Prolog unavailable
+        return False
 
     def throw_rock(self, sound_manager, current_time):
         """
@@ -439,7 +448,11 @@ class Player(Entity):
                 if not self.is_walking:
                     # Just started walking
                     self.is_walking = True
-                    self.sound_manager.play_footstep_loop(0.3)
+                    self.sound_manager.play_footstep_loop(0.3, in_water=self.in_water)
+                else:
+                    # Already walking - check if water state changed
+                    # Update footstep sound if transitioning between water/land
+                    self.sound_manager.play_footstep_loop(0.3, in_water=self.in_water)
             else:
                 # Player stopped walking - stop footstep sound
                 if self.is_walking:

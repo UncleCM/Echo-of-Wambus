@@ -122,6 +122,7 @@ class SoundManager:
         sound_files = {
             "button": "button.wav",
             "footstep": "footstep.wav",
+            "footstep_water": "Footsteps_Water.mp3",  # Water footsteps
             "game_over": "game_over.wav",
             "roar": "Roar_Sound_Effect.mp3",  # Wumpus roar sound
         }
@@ -133,10 +134,14 @@ class SoundManager:
                 try:
                     loaded_sound = pygame.mixer.Sound(filepath)
 
-                    # Speed up footstep sound for faster walking rhythm
+                    # Speed up footstep sounds for faster walking rhythm
                     if name == "footstep":
                         loaded_sound = self.speed_up_sound(
                             loaded_sound, speed_factor=1.6
+                        )
+                    elif name == "footstep_water":
+                        loaded_sound = self.speed_up_sound(
+                            loaded_sound, speed_factor=1.4
                         )
 
                     self.sounds[name] = loaded_sound
@@ -238,19 +243,45 @@ class SoundManager:
         else:
             print(f"[SoundManager] Sound '{name}' not found")
 
-    def play_footstep_loop(self, volume=0.3):
-        """Start playing footstep sound in a loop"""
-        if "footstep" in self.sounds:
+    def play_footstep_loop(self, volume=0.3, in_water=False):
+        """Start playing footstep sound in a loop
+        
+        Args:
+            volume: Sound volume (0.0 to 1.0)
+            in_water: If True, plays water footsteps instead of normal footsteps
+        """
+        sound_key = "footstep_water" if in_water else "footstep"
+        
+        if sound_key in self.sounds:
+            # Check if we need to switch sounds (land to water or vice versa)
+            current_playing = self.footstep_channel and self.footstep_channel.get_busy()
+            
+            # Stop and restart if switching between water/land
+            if current_playing:
+                # Store which sound is currently playing
+                if not hasattr(self, '_current_footstep_type'):
+                    self._current_footstep_type = "footstep"
+                
+                # If sound type changed, stop and restart
+                if self._current_footstep_type != sound_key:
+                    self.footstep_channel.stop()
+                    self.footstep_channel = None
+                    self._current_footstep_type = sound_key
+            
+            # Start playing if not already playing
             if self.footstep_channel is None or not self.footstep_channel.get_busy():
-                sound = self.sounds["footstep"]
+                sound = self.sounds[sound_key]
                 sound.set_volume(volume)
                 self.footstep_channel = sound.play(loops=-1)  # Loop indefinitely
+                self._current_footstep_type = sound_key
 
     def stop_footstep_loop(self):
         """Stop the looping footstep sound"""
         if self.footstep_channel and self.footstep_channel.get_busy():
             self.footstep_channel.stop()
             self.footstep_channel = None
+        if hasattr(self, '_current_footstep_type'):
+            delattr(self, '_current_footstep_type')
 
     def set_sfx_volume(self, volume):
         """Set the volume for sound effects (0.0 to 1.0)"""

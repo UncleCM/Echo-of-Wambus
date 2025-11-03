@@ -759,8 +759,8 @@ init_game_state :-
     asserta(game_state(playing)),
     asserta(time_remaining(180.0)),      % 3 minutes
     asserta(player_health(100)),
-    asserta(player_inventory(3, 3)),      % Start: 3 arrows, 3 rocks
-    asserta(player_max_inventory(10, 10)). % Max: 10 arrows, 10 rocks
+    asserta(player_inventory(2, 3)),      % Start: 2 arrows, 3 rocks (matches Settings.py)
+    asserta(player_max_inventory(2, 3)). % Max: 2 arrows, 3 rocks (matches Settings.py: MAX_ARROWS=2, MAX_ROCKS=3)
 
 % Get current game state
 get_game_state(State) :-
