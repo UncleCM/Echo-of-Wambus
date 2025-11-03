@@ -1,19 +1,24 @@
 # Prolog Code Refactoring Plan
 
 ## Objective
+
 Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components organized by functionality.
 
 ## Module Structure
 
 ### 1. **core/geometry.pl**
+
 **Purpose:** Basic geometric calculations and collision detection
+
 - `point_in_rect/6` - Point-in-rectangle test
 - `rects_collide/8` - Rectangle collision detection
 - `distance_squared/5` - Distance calculation (no sqrt)
 - `normalize_direction/4` - Vector normalization
 
 ### 2. **core/map_system.pl**
+
 **Purpose:** Map data structures, grid system, navigation
+
 - Dynamic facts: `map_size/2`, `tile_size/2`, `grid_cell/3`, `grid_size/2`
 - `init_map_system/5` - Initialize map dimensions
 - `build_navigation_grid/0` - Build traversable grid
@@ -22,7 +27,9 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
 - Pathfinding: `find_path/3`, `cached_path/3`
 
 ### 3. **core/movement.pl**
+
 **Purpose:** Movement resolution and collision handling
+
 - `resolve_movement/8` - Main movement resolution
 - `can_move/6` - Check if position is valid
 - `check_collision/5` - Collision with walls
@@ -30,7 +37,9 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
 - `check_water/5` - Water zone detection
 
 ### 4. **entities/player.pl**
+
 **Purpose:** Player state management
+
 - Dynamic facts: `player_position/2`, `player_health/1`, `player_inventory/2`, `player_max_inventory/2`
 - `init_game_state/0` - Initialize player stats
 - `get_player_inventory/2` - Query inventory
@@ -39,7 +48,9 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
 - `take_damage/2` - Health management
 
 ### 5. **entities/wumpus_ai.pl**
+
 **Purpose:** Wumpus AI behavior and state machine
+
 - Dynamic facts: `wumpus_ai_state/2`, `wumpus_target/3`, `wumpus_patrol_index/2`, etc.
 - `init_wumpus/2` - Initialize Wumpus
 - `decide_wumpus_action/10` - Main AI decision logic
@@ -49,7 +60,9 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
 - State management: `set_roaring/2`, `get_last_roar_time/2`
 
 ### 6. **entities/treasure.pl**
+
 **Purpose:** Treasure and mimic system
+
 - Dynamic facts: `chest_position/4`, `chest_type/2`, `treasure_collected/1`
 - `setup_treasure_system/7` - Initialize 3 chests (1 real, 2 mimics)
 - `get_chest_info/3` - Query chest data
@@ -57,7 +70,9 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
 - `is_mimic/1` - Check if chest is mimic
 
 ### 7. **systems/combat.pl**
+
 **Purpose:** Projectile systems and combat mechanics
+
 - **Arrows:**
   - Dynamic facts: `active_arrow/6`
   - `spawn_arrow/6`, `remove_arrow/1`, `count_active_arrows/1`
@@ -69,7 +84,9 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
   - `deal_damage/3`, `wumpus_can_attack_player/6`
 
 ### 8. **systems/spawning.pl**
+
 **Purpose:** Entity spawning systems
+
 - `init_spawn_config/0` - Setup spawn parameters
 - `generate_wumpus_spawns/2` - Wumpus spawn positions
 - `generate_pickup_spawns/2` - Arrow/rock pickup spawns
@@ -77,7 +94,9 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
 - `find_spawn_position/3` - Safe spawn finding
 
 ### 9. **systems/game_state.pl**
+
 **Purpose:** Global game state management
+
 - Dynamic facts: `game_state/1`, `time_remaining/1`, `game_over/1`
 - `init_game_state/0` - Reset game state
 - `set_game_state/1`, `get_game_state/1`
@@ -86,7 +105,9 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
 - `get_game_over_reason/1`
 
 ### 10. **utils/helpers.pl**
+
 **Purpose:** Utility predicates
+
 - `count_facts/2` - Count dynamic facts
 - `random_element/2` - Random list element
 - `min/3`, `max/3` - Math utilities
@@ -106,7 +127,7 @@ Refactor `game_logic.pl` (1200+ lines) into modular, maintainable components org
 ✅ **Readability:** Smaller files, easier to navigate  
 ✅ **Reusability:** Modules can be tested independently  
 ✅ **Scalability:** Easy to add new features to specific modules  
-✅ **Debugging:** Isolate issues to specific modules  
+✅ **Debugging:** Isolate issues to specific modules
 
 ## Compatibility
 

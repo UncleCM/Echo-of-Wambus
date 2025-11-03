@@ -8,6 +8,11 @@
 :- use_module('prolog/core/movement.pl').
 :- use_module('prolog/core/map_system.pl').
 
+% Load entity modules (Phase 2 - Complete)
+:- use_module('prolog/entities/player.pl').
+:- use_module('prolog/entities/wumpus_ai.pl').
+:- use_module('prolog/entities/treasure.pl').
+
 % Load the original game_logic.pl for predicates not yet modularized
 % This ensures all game features still work during the refactoring process
 :- include('game_logic.pl').
