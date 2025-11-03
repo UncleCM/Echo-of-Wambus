@@ -441,19 +441,32 @@ class Wumpus(Entity):
             # Player sounds detected
             if loudness > 30:  # Loud enough to chase
                 print(f"[Wumpus] Heard {sound.source_type} (loudness: {loudness:.1f})! CHASING...")
+                
+                # Only roar if transitioning FROM patrol/investigating/searching/roaming TO chasing
+                # Don't roar if already chasing or attacking (attack state means currently in combat)
+                should_roar = self.ai_state in [WumpusAIState.ROAMING, WumpusAIState.INVESTIGATING, WumpusAIState.SEARCHING, "patrol"]
+                
                 if self.prolog and self.prolog.available:
                     self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.CHASING)
                 self.target_position = sound.position.copy()
                 self.current_path = None  # Clear path when changing target
                 self.path_index = 0
-                self._trigger_roar()
+                
+                if should_roar:
+                    self._trigger_roar()
             else:
                 # Faint sound - just investigate
+                # Roar if transitioning FROM roaming/patrol TO investigating (first detection)
+                should_roar = self.ai_state in [WumpusAIState.ROAMING, "patrol"]
+                
                 if self.prolog and self.prolog.available:
                     self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.INVESTIGATING)
                 self.target_position = sound.position.copy()
                 self.current_path = None  # Clear path when changing target
                 self.path_index = 0
+                
+                if should_roar:
+                    self._trigger_roar()
     
     def _handle_no_sound(self):
         """No sound detected - continue current behavior (FALLBACK)"""

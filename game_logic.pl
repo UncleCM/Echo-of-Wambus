@@ -993,13 +993,25 @@ decide_wumpus_action(WumpusID, SoundType, SoundX, SoundY, Loudness, CurrentState
         (Loudness > 30 ->
             % Loud enough to chase
             NewState = chasing,
-            ShouldRoar = true,
+            % Only roar if transitioning FROM patrol/investigating/searching/roaming TO chasing
+            % Don't roar if already chasing or attacking (attack state means currently in combat)
+            (member(CurrentState, [patrol, investigating, searching, roaming]) ->
+                ShouldRoar = true
+            ;
+                ShouldRoar = false
+            ),
             TargetX = SoundX,
             TargetY = SoundY
         ;
             % Faint - just investigate
             NewState = investigating,
-            ShouldRoar = false,
+            % Roar if transitioning FROM roaming/patrol TO investigating (first detection)
+            % Don't roar if already investigating, chasing, searching, or attacking
+            (member(CurrentState, [roaming, patrol]) ->
+                ShouldRoar = true
+            ;
+                ShouldRoar = false
+            ),
             TargetX = SoundX,
             TargetY = SoundY
         )

@@ -870,8 +870,10 @@ class Game:
                     # Game over / Victory screens
                     elif self.game_state in (GameState.GAME_OVER, GameState.VICTORY):
                         if event.key == pygame.K_r:
+                            print(f"[Input] R key pressed! Restarting game from {self.game_state}")
                             self.initialize_game()
                         elif event.key == pygame.K_ESCAPE:
+                            print(f"[Input] ESC key pressed! Returning to main menu")
                             self.game_state = GameState.MAIN_MENU
                             self.sound_manager.stop_music()
                             self.sound_manager.play_menu_music()
