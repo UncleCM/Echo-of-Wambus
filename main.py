@@ -52,9 +52,10 @@ class Game:
             self.prolog.init_game()  # Clear old facts
             self.prolog.init_game_state()  # Reset game state
         
-        # Legacy Python variables (for backward compatibility - will be removed later)
-        self.has_treasure = False
-        self.exit_unlocked = False
+        # =========================================================================
+        # PHASE 5.1: NO MORE PYTHON STATE DUPLICATES
+        # All game state is now ONLY in Prolog (single source of truth)
+        # =========================================================================
 
         # Create sprite groups
         self.all_sprites = AllSprites()
@@ -478,12 +479,13 @@ class Game:
 
     def check_treasure_collection(self):
         """Check if player opens treasure chests (press E near chest)"""
-        # Check if treasure already collected using Prolog
+        # =========================================================================
+        # PHASE 5.1: Prolog is the ONLY source of truth for treasure state
+        # =========================================================================
         has_treasure = False
         if self.prolog and self.prolog.available:
             has_treasure = self.prolog.has_treasure()
-        else:
-            has_treasure = self.has_treasure
+        # No fallback - if Prolog unavailable, game shouldn't run
         
         if not has_treasure and len(self.treasure_sprites) > 0:
             # Check if player presses E near any chest
@@ -503,25 +505,25 @@ class Game:
                     result = chest.open(self)
                     
                     if result == 'treasure':
-                        # Real treasure found!
-                        self.has_treasure = True  # Legacy Python variable
+                        # =========================================================================
+                        # PHASE 5.1: Prolog handles treasure collection (NO Python state!)
+                        # =========================================================================
                         
-                        # Unlock exit in both Python and Prolog
+                        # Update Prolog FIRST (single source of truth)
+                        if self.prolog and self.prolog.available:
+                            self.prolog.collect_treasure()
+                            self.prolog.unlock_exit()
+                        
+                        # Python only handles visual/gameplay effects (NOT state)
                         if len(self.exit_sprites) > 0:
                             exit_portal = self.exit_sprites.sprites()[0]
-                            exit_portal.unlock()
-                            self.exit_unlocked = True
+                            exit_portal.unlock()  # Visual unlock only
                         
-                        # Enrage all Wumpus
+                        # Enrage all Wumpus (gameplay effect)
                         for wumpus in self.wumpus_sprites:
                             wumpus.speed *= 1.5
                         
                         print("[Game] Real treasure found! Wumpus enraged! Find exit!")
-                        
-                        # Update Prolog (collect treasure and unlock exit)
-                        if self.prolog and self.prolog.available:
-                            self.prolog.collect_treasure()
-                            self.prolog.unlock_exit()
                         
                     elif result == 'mimic':
                         # Mimic! Spawn new Wumpus
@@ -547,7 +549,9 @@ class Game:
     def check_exit_reached(self):
         """Check if player reaches unlocked exit using Prolog"""
         if len(self.exit_sprites) > 0:
-            # Use Prolog to check victory conditions
+            # =========================================================================
+            # PHASE 5.1: Prolog is the ONLY authority for victory conditions
+            # =========================================================================
             can_exit = False
             if self.prolog and self.prolog.available:
                 can_exit = self.prolog.can_exit_game(
@@ -556,11 +560,7 @@ class Game:
                     int(self.player.hitbox_rect.width),
                     int(self.player.hitbox_rect.height)
                 )
-            else:
-                # Fallback: Python collision check
-                if self.has_treasure and self.exit_unlocked:
-                    exit_portal = self.exit_sprites.sprites()[0]
-                    can_exit = self.player.hitbox_rect.colliderect(exit_portal.hitbox_rect)
+            # No fallback - if Prolog unavailable, game shouldn't run
             
             if can_exit:
                 self.game_state = GameState.VICTORY
@@ -625,7 +625,7 @@ class Game:
                 # Hit if either method detects collision
                 if hit:
                     # Apply stun to Wumpus
-                    wumpus.apply_stun()
+                    wumpus.stun()
 
                     # Remove arrow
                     arrow.kill()
@@ -677,7 +677,8 @@ class Game:
             return
         
         # Try to throw rock in facing direction
-        rock_direction = self.player.throw_rock(self.sound_manager)
+        current_time = pygame.time.get_ticks() / 1000.0
+        rock_direction = self.player.throw_rock(self.sound_manager, current_time)
         
         if rock_direction is not None:
             # Create rock sprite
@@ -1113,25 +1114,27 @@ class Game:
                 )
                 self.screen.blit(arrow_text, (20, 20))
 
-                # Treasure status (top left, below arrows) - Use Prolog state
+                # =========================================================================
+                # PHASE 5.1: Treasure & Exit status - READ ONLY from Prolog
+                # =========================================================================
+                
+                # Treasure status (top left, below arrows)
                 has_treasure = False
                 if self.prolog and self.prolog.available:
                     has_treasure = self.prolog.has_treasure()
-                else:
-                    has_treasure = self.has_treasure
+                # No fallback - Prolog is required
                 
                 treasure_status = "✓ Treasure" if has_treasure else "⬜ Treasure"
                 treasure_color = (255, 215, 0) if has_treasure else (150, 150, 150)
                 treasure_text = font.render(treasure_status, True, treasure_color)
                 self.screen.blit(treasure_text, (20, 60))
 
-                # Exit status (top left, below treasure) - Use Prolog state
+                # Exit status (top left, below treasure)
                 if has_treasure:
                     exit_unlocked = False
                     if self.prolog and self.prolog.available:
                         exit_unlocked = self.prolog.is_exit_unlocked()
-                    else:
-                        exit_unlocked = self.exit_unlocked
+                    # No fallback - Prolog is required
                     
                     exit_status = (
                         "🔓 Exit Unlocked!" if exit_unlocked else "🔒 Exit"

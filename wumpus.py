@@ -52,20 +52,22 @@ class Wumpus(Entity):
         self.stun_timer = 0
         self.stun_duration = ARROW_STUN_DURATION  # From Settings.py
 
-        # Sound-based AI state (synchronized with Prolog)
-        self.ai_state = WumpusAIState.ROAMING
-        self.target_position = None  # Where Wumpus is heading
-        self.last_heard_sound = None  # Last detected sound
-        self.roaming_target = None  # Current roaming destination
-        self.search_timer = 0  # Time left searching (synced with Prolog)
+        # =========================================================================
+        # PHASE 5.1: AI state is READ-ONLY from Prolog (single source of truth)
+        # self.ai_state is now a @property that reads from Prolog
+        # =========================================================================
+        self.target_position = None  # Where Wumpus is heading (UI tracking)
+        self.last_heard_sound = None  # Last detected sound (UI tracking)
+        self.roaming_target = None  # Current roaming destination (UI tracking)
+        self.search_timer = 0  # Time left searching (synced from Prolog)
 
-        # Patrol route system
+        # Patrol route system (UI navigation only)
         self.patrol_route = []  # List of waypoints for patrol
         self.current_waypoint_index = 0  # Current waypoint in patrol route
         self.patrol_mode = True  # Whether using patrol route or random roaming
         self._setup_patrol_route()  # Initialize patrol route
         
-        # Initialize AI in Prolog
+        # Initialize AI in Prolog (authoritative state)
         if self.prolog and self.prolog.available:
             self.prolog.init_wumpus_ai(self.wumpus_id, self.hearing_radius)
         
@@ -119,6 +121,16 @@ class Wumpus(Entity):
     def pos(self):
         """Get current position as Vector2 (for compatibility with sound-based AI)"""
         return pygame.math.Vector2(self.hitbox_rect.center)
+    
+    # =========================================================================
+    # PHASE 5.1: AI state property - Prolog is the single source of truth
+    # =========================================================================
+    @property
+    def ai_state(self):
+        """Get current AI state from Prolog (read-only)"""
+        if self.prolog and self.prolog.available:
+            return self.prolog.get_wumpus_state(self.wumpus_id)
+        return WumpusAIState.ROAMING  # Fallback if Prolog unavailable
 
     def load_animations(self):
         """Load Wumpus animation frames from sprite sheet"""
@@ -258,9 +270,12 @@ class Wumpus(Entity):
 
         # Sync current state with Prolog
         if self.prolog and self.prolog.available:
-            # Get state from Prolog (authoritative)
-            prolog_state = self.prolog.get_wumpus_state(self.wumpus_id)
-            self.ai_state = prolog_state
+            # =========================================================================
+            # PHASE 5.1: Read state from Prolog (self.ai_state is now @property)
+            # No more self.ai_state = ... (read-only!)
+            # =========================================================================
+            # Just read for local checks (state already in Prolog)
+            prolog_state = self.ai_state  # Uses @property to read from Prolog
             
             # Update hearing radius based on state
             self.current_hearing_radius = self.prolog.calculate_hearing_radius(
@@ -304,14 +319,20 @@ class Wumpus(Entity):
                 self.ai_state
             )
             if should_attack:
-                self.ai_state = "attack"
+                # =========================================================================
+                # PHASE 5.1: Update state in Prolog (ai_state is read-only @property)
+                # =========================================================================
                 self.prolog.set_wumpus_state(self.wumpus_id, "attack")
                 self.direction = pygame.math.Vector2(0, 0)
         else:
             # Fallback: distance check
             distance_to_player = self.pos.distance_to(pygame.math.Vector2(player_pos))
             if distance_to_player <= self.attack_range and self.ai_state == WumpusAIState.CHASING:
-                self.ai_state = "attack"
+                # =========================================================================
+                # PHASE 5.1: Update state in Prolog (ai_state is read-only @property)
+                # =========================================================================
+                if self.prolog and self.prolog.available:
+                    self.prolog.set_wumpus_state(self.wumpus_id, "attack")
                 self.direction = pygame.math.Vector2(0, 0)
     
     def _handle_sound_detected_prolog(self, sound, loudness):
@@ -334,7 +355,9 @@ class Wumpus(Entity):
         # Apply Prolog's decision
         if new_state != self.ai_state:
             print(f"[Wumpus {self.wumpus_id}] Heard {sound.source_type} (loudness: {loudness:.1f})! {self.ai_state} → {new_state}")
-            self.ai_state = new_state
+            # =========================================================================
+            # PHASE 5.1: Update state in Prolog only (ai_state is read-only @property)
+            # =========================================================================
             self.prolog.set_wumpus_state(self.wumpus_id, new_state)
             
             # Set target if provided
@@ -364,7 +387,10 @@ class Wumpus(Entity):
         # Apply Prolog's decision
         if new_state != self.ai_state:
             print(f"[Wumpus {self.wumpus_id}] No sound detected. {self.ai_state} → {new_state}")
-            self.ai_state = new_state
+            # =========================================================================
+            # PHASE 5.1: Update state in Prolog only (ai_state is read-only @property)
+            # =========================================================================
+            self.prolog.set_wumpus_state(self.wumpus_id, new_state)
             self.prolog.set_wumpus_state(self.wumpus_id, new_state)
             
             if search_time > 0:
@@ -381,8 +407,10 @@ class Wumpus(Entity):
             
             # Check if timeout
             if self.prolog.search_timeout(self.wumpus_id):
+                # =========================================================================
+                # PHASE 5.1: Update state in Prolog (ai_state is read-only @property)
+                # =========================================================================
                 # Give up, return to roaming
-                self.ai_state = WumpusAIState.ROAMING
                 self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.ROAMING)
                 self.current_hearing_radius = self.hearing_radius
                 self.prolog.set_hearing_radius(self.wumpus_id, self.hearing_radius)
@@ -394,11 +422,16 @@ class Wumpus(Entity):
             self._behavior_searching(dt)
     
     def _handle_sound_detected(self, sound, loudness):
-        """React to detected sound"""
+        """React to detected sound (FALLBACK - used only if Prolog unavailable)"""
+        # =========================================================================
+        # PHASE 5.1: This is fallback code - should rarely execute
+        # If Prolog available, use Prolog's decision logic instead
+        # =========================================================================
         if sound.source_type == 'rock_impact':
             # LOUD distraction - investigate immediately!
             print(f"[Wumpus] Heard rock impact (loudness: {loudness:.1f})! Investigating...")
-            self.ai_state = WumpusAIState.INVESTIGATING
+            if self.prolog and self.prolog.available:
+                self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.INVESTIGATING)
             self.target_position = sound.position.copy()
             self.last_heard_sound = sound
             self.current_path = None  # Clear path when changing target
@@ -407,24 +440,30 @@ class Wumpus(Entity):
         elif sound.source_type in ['walk', 'dash', 'arrow_shot']:
             # Player sounds detected
             if loudness > 30:  # Loud enough to chase
-                print(f"[Wumpus] Heard player (loudness: {loudness:.1f})! Chasing...")
-                self.ai_state = WumpusAIState.CHASING
+                print(f"[Wumpus] Heard {sound.source_type} (loudness: {loudness:.1f})! CHASING...")
+                if self.prolog and self.prolog.available:
+                    self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.CHASING)
                 self.target_position = sound.position.copy()
                 self.current_path = None  # Clear path when changing target
                 self.path_index = 0
                 self._trigger_roar()
             else:
                 # Faint sound - just investigate
-                self.ai_state = WumpusAIState.INVESTIGATING
+                if self.prolog and self.prolog.available:
+                    self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.INVESTIGATING)
                 self.target_position = sound.position.copy()
                 self.current_path = None  # Clear path when changing target
                 self.path_index = 0
     
     def _handle_no_sound(self):
-        """No sound detected - continue current behavior"""
+        """No sound detected - continue current behavior (FALLBACK)"""
+        # =========================================================================
+        # PHASE 5.1: This is fallback code - should rarely execute
+        # =========================================================================
         # If chasing but lost sound, switch to searching
         if self.ai_state == WumpusAIState.CHASING:
-            self.ai_state = WumpusAIState.SEARCHING
+            if self.prolog and self.prolog.available:
+                self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.SEARCHING)
             self.search_timer = 8.0  # Search for 8 seconds
             self.current_path = None  # Clear path when searching
             self.path_index = 0
@@ -513,13 +552,15 @@ class Wumpus(Entity):
                 30
             )
             if reached:
-                # Ask Prolog what to do when target reached
+                # =========================================================================
+                # PHASE 5.1: decide_target_reached() sets state in Prolog internally
+                # We just read the new state for logging (ai_state is @property)
+                # =========================================================================
                 new_state, search_time = self.prolog.decide_target_reached(
                     self.wumpus_id,
                     self.ai_state
                 )
-                self.ai_state = new_state
-                self.prolog.set_wumpus_state(self.wumpus_id, new_state)
+                # No assignment needed - Prolog already set the state!
                 if search_time > 0:
                     self.search_timer = search_time
                     self.prolog.set_search_timer(self.wumpus_id, search_time)
@@ -528,7 +569,8 @@ class Wumpus(Entity):
                 return
         elif self._reached_target():
             # Fallback without Prolog
-            self.ai_state = WumpusAIState.SEARCHING
+            if self.prolog and self.prolog.available:
+                self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.SEARCHING)
             self.search_timer = 5.0
             self.current_path = None
             print("[Wumpus] Reached sound location, nothing here... searching")
@@ -581,13 +623,15 @@ class Wumpus(Entity):
                 30
             )
             if reached:
-                # Ask Prolog what to do when target reached
+                # =========================================================================
+                # PHASE 5.1: decide_target_reached() sets state in Prolog internally
+                # We just read the new state for logging (ai_state is @property)
+                # =========================================================================
                 new_state, search_time = self.prolog.decide_target_reached(
                     self.wumpus_id,
                     self.ai_state
                 )
-                self.ai_state = new_state
-                self.prolog.set_wumpus_state(self.wumpus_id, new_state)
+                # No assignment needed - Prolog already set the state!
                 if search_time > 0:
                     self.search_timer = search_time
                     self.prolog.set_search_timer(self.wumpus_id, search_time)
@@ -600,7 +644,8 @@ class Wumpus(Entity):
                 return
         elif self._reached_target():
             # Fallback without Prolog
-            self.ai_state = WumpusAIState.SEARCHING
+            if self.prolog and self.prolog.available:
+                self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.SEARCHING)
             self.search_timer = 8.0
             self.is_roaring = False
             self.current_hearing_radius = self.hearing_radius
@@ -653,12 +698,16 @@ class Wumpus(Entity):
                 self.direction = direction.normalize()
     
     def _behavior_searching(self, dt):
-        """Search around last known position"""
+        """Search around last known position (FALLBACK - legacy code)"""
+        # =========================================================================
+        # PHASE 5.1: This is fallback code - should rarely execute
+        # =========================================================================
         self.search_timer -= dt
         
         if self.search_timer <= 0:
             # Give up, return to roaming
-            self.ai_state = WumpusAIState.ROAMING
+            if self.prolog and self.prolog.available:
+                self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.ROAMING)
             self.current_hearing_radius = self.hearing_radius
             self.is_roaring = False
             print("[Wumpus] Search timeout... resuming roaming")
@@ -719,7 +768,7 @@ class Wumpus(Entity):
             return True
         return self.pos.distance_to(self.target_position) < threshold
 
-    def apply_stun(self, duration=None):
+    def stun(self, duration=None):
         """
         Apply stun effect to Wumpus (from arrow hit).
         Wumpus freezes in place and cannot move or attack.
@@ -729,7 +778,13 @@ class Wumpus(Entity):
 
         self.is_stunned = True
         self.stun_timer = duration
-        self.ai_state = WumpusAIState.STUNNED
+        
+        # =========================================================================
+        # PHASE 5.1: Update state in Prolog (ai_state is read-only @property)
+        # =========================================================================
+        if self.prolog and self.prolog.available:
+            self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.STUNNED)
+        
         self.direction = pygame.math.Vector2(0, 0)
 
         print(f"[Wumpus] Stunned for {duration} seconds!")
@@ -746,7 +801,13 @@ class Wumpus(Entity):
     def on_death(self):
         """Handle Wumpus death"""
         super().on_death()
-        self.ai_state = WumpusAIState.DEAD
+        
+        # =========================================================================
+        # PHASE 5.1: Update state in Prolog (ai_state is read-only @property)
+        # =========================================================================
+        if self.prolog and self.prolog.available:
+            self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.DEAD)
+        
         self.direction = pygame.math.Vector2(0, 0)
         print("[Wumpus] Wumpus defeated!")
 
@@ -794,7 +855,8 @@ class Wumpus(Entity):
             self.stun_timer -= dt
             if self.stun_timer <= 0:
                 self.is_stunned = False
-                self.ai_state = WumpusAIState.ROAMING
+                if self.prolog and self.prolog.available:
+                    self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.ROAMING)
                 print("[Wumpus] Recovered from stun!")
 
         # Handle death state
@@ -842,7 +904,8 @@ class Wumpus(Entity):
                     self.direction = pygame.math.Vector2(0, 0)
                     # Switch to roaming to find new path
                     if self.ai_state != WumpusAIState.ROAMING:
-                        self.ai_state = WumpusAIState.ROAMING
+                        if self.prolog and self.prolog.available:
+                            self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.ROAMING)
                         self.roaming_target = None
                     return
         

@@ -76,7 +76,7 @@ class SoundManager:
         pygame.mixer.init()
         self.sounds = {}
         self.sfx_volume = 0.7
-        self.music_volume = 0.3  # Lower volume for background music
+        self.music_volume = 0.6  # Increased from 0.3 - music should be audible!
         self.footstep_channel = None  # Dedicated channel for footstep looping
         
         # Music tracking (support multiple music tracks)

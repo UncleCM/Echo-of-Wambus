@@ -20,17 +20,21 @@ class Player(Entity):
         self.sound_manager = sound_manager
         self.is_walking = False  # Track if player is currently walking
 
-        # Arrow combat system
-        self.arrows = STARTING_ARROWS  # Current arrow count
-        self.max_arrows = MAX_ARROWS  # Maximum arrows can carry
+        # =========================================================================
+        # PHASE 5.1: Arrow/Rock counts are READ-ONLY from Prolog
+        # Python just displays values, Prolog manages state
+        # =========================================================================
+        # self.arrows and self.rocks are now @property methods that read from Prolog
+        self.max_arrows = MAX_ARROWS  # Max capacity (constant)
+        self.max_rocks = MAX_ROCKS    # Max capacity (constant)
+        
+        # Combat cooldowns (UI timing only, Prolog tracks authoritative cooldown)
         self.attack_cooldown = ATTACK_COOLDOWN / 1000.0  # Convert ms to seconds
         self.attack_timer = 0  # Time since last shot
         self.is_attacking = False  # Currently shooting (prevents movement)
         self.attack_duration = 0.3  # Time player is frozen during shoot animation
 
-        # Rock throwing system
-        self.rocks = 0  # Current rock count
-        self.max_rocks = MAX_ROCKS  # Maximum rocks can carry
+        # Rock throwing timing (UI only)
         self.throw_cooldown = ROCK_THROW_COOLDOWN / 1000.0  # Convert ms to seconds
         self.last_throw_time = 0  # Time since last throw
 
@@ -47,6 +51,25 @@ class Player(Entity):
         self.setup_sprite(initial_image, hitbox_inflate=(-75, -75))
 
         print(f"First frame size: {self.image.get_size()}")
+    
+    # =========================================================================
+    # PHASE 5.1: Read-only properties - Prolog is the single source of truth
+    # =========================================================================
+    @property
+    def arrows(self):
+        """Get current arrow count from Prolog (read-only)"""
+        if self.prolog and self.prolog.available:
+            arrows, _ = self.prolog.get_player_inventory()
+            return arrows
+        return 0  # Fallback if Prolog unavailable
+    
+    @property
+    def rocks(self):
+        """Get current rock count from Prolog (read-only)"""
+        if self.prolog and self.prolog.available:
+            _, rocks = self.prolog.get_player_inventory()
+            return rocks
+        return 0  # Fallback if Prolog unavailable
     
     @property
     def pos(self):
@@ -198,12 +221,15 @@ class Player(Entity):
 
         arrow_direction = direction_map.get(self.facing, (0, 1))
 
-        # Start attack animation
+        # =========================================================================
+        # PHASE 5.1: Prolog manages arrow consumption (Python just updates UI timing)
+        # =========================================================================
+        
+        # Start attack animation (UI only)
         self.is_attacking = True
         self.attack_timer = self.attack_cooldown
-        self.arrows -= 1
         
-        # Update Prolog inventory
+        # Prolog handles arrow usage (single source of truth)
         if self.prolog and self.prolog.available:
             self.prolog.use_arrow()
 
@@ -212,28 +238,21 @@ class Player(Entity):
 
     def add_arrows(self, amount=1):
         """Pick up arrows from ArrowPickup"""
-        if self.arrows < self.max_arrows:
-            self.arrows = min(self.arrows + amount, self.max_arrows)
+        # =========================================================================
+        # PHASE 5.1: Prolog handles arrow addition (Python just logs)
+        # =========================================================================
+        if self.prolog and self.prolog.available:
+            self.prolog.add_arrows(amount)
             
-            # Update Prolog inventory
-            if self.prolog and self.prolog.available:
-                self.prolog.add_arrows(amount)
-            
-            print(
-                f"[Player] Picked up {amount} arrow(s)! Total: {self.arrows}/{self.max_arrows}"
-            )
-            return True
-        else:
-            print(
-                f"[Player] Arrow capacity full! ({self.max_arrows}/{self.max_arrows})"
-            )
-            return False
+        # Read new count from Prolog for display
+        new_count = self.arrows
+        
+        print(
+            f"[Player] Picked up {amount} arrow(s)! Total: {new_count}/{self.max_arrows}"
+        )
+        return new_count < self.max_arrows  # Return True if had space
 
-    def attack(self):
-        """Deprecated - replaced by shoot_arrow()"""
-        pass
-
-    def throw_rock(self, sound_manager):
+    def throw_rock(self, sound_manager, current_time):
         """
         Throw a rock in the direction player is facing (keyboard-based)
         
@@ -283,11 +302,12 @@ class Player(Entity):
             'rock_throw'
         )
         
-        # Consume rock
-        self.rocks -= 1
+        # =========================================================================
+        # PHASE 5.1: Prolog handles rock consumption (Python just updates UI timing)
+        # =========================================================================
         self.last_throw_time = current_time
         
-        # Update Prolog inventory
+        # Prolog handles rock usage (single source of truth)
         if self.prolog and self.prolog.available:
             self.prolog.use_rock()
         
@@ -296,18 +316,17 @@ class Player(Entity):
     
     def add_rocks(self, amount=1):
         """Pick up rocks from RockPickup"""
-        if self.rocks < self.max_rocks:
-            self.rocks = min(self.rocks + amount, self.max_rocks)
+        # =========================================================================
+        # PHASE 5.1: Prolog handles rock addition (Python just logs)
+        # =========================================================================
+        if self.prolog and self.prolog.available:
+            self.prolog.add_rocks(amount)
             
-            # Update Prolog inventory
-            if self.prolog and self.prolog.available:
-                self.prolog.add_rocks(amount)
-            
-            print(f"[Player] Picked up {amount} rock(s)! Total: {self.rocks}/{self.max_rocks}")
-            return True
-        else:
-            print(f"[Player] Rock capacity full! ({self.max_rocks}/{self.max_rocks})")
-            return False
+        # Read new count from Prolog for display
+        new_count = self.rocks
+        
+        print(f"[Player] Picked up {amount} rock(s)! Total: {new_count}/{self.max_rocks}")
+        return new_count < self.max_rocks  # Return True if had space
 
     def animate(self, dt):
         """Update animation frames"""
