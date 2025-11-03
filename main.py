@@ -836,6 +836,7 @@ class Game:
                     self.running = False
 
                 if event.type == pygame.KEYDOWN:
+                    print(f"[DEBUG] Key pressed: {event.key}, Current state: {self.game_state}")
                     # Main Menu controls
                     if self.game_state == GameState.MAIN_MENU:
                         action, new_state = self.main_menu.handle_event(event)
@@ -871,6 +872,7 @@ class Game:
 
                     # Game over / Victory screens
                     elif self.game_state in (GameState.GAME_OVER, GameState.VICTORY):
+                        print(f"[DEBUG] In GAME_OVER/VICTORY handler, key={event.key}, K_r={pygame.K_r}")
                         if event.key == pygame.K_r:
                             print(f"[Input] R key pressed! Restarting game from {self.game_state}")
                             self.initialize_game()

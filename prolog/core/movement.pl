@@ -16,7 +16,11 @@
     add_water_zone/4,
     clear_collision_boxes/0,
     clear_fall_zones/0,
-    clear_water_zones/0
+    clear_water_zones/0,
+    % Dynamic facts (exported for external access)
+    fall_zone/4,
+    water_zone/4,
+    collision_box/4
 ]).
 
 :- use_module('geometry.pl').

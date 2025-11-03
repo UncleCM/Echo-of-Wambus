@@ -15,20 +15,17 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 ## Modules Created
 
 ### 1. **player.pl** (196 lines)
-
 **Location**: `prolog/entities/player.pl`
 
 **Purpose**: Complete player state management including position, inventory, health, and item pickups.
 
 **Exports**: 18 predicates
-
 - **Position**: `update_player_position/2`, `get_player_position/2`
 - **Inventory**: `init_player_inventory/0`, `get_player_inventory/2`, `use_arrow/0`, `use_rock/0`, `add_arrows/1`, `add_rocks/1`, `can_use_arrow/0`, `can_use_rock/0`
 - **Health**: `get_player_health/1`, `damage_player/1`, `heal_player/1`, `set_player_health/1`
 - **Pickups**: `can_pickup_arrow/5`, `can_pickup_rock/5`, `add_arrow_pickup/3`, `remove_arrow_pickup/1`, `get_all_arrow_pickups/1`, `add_rock_pickup/3`, `remove_rock_pickup/1`, `get_all_rock_pickups/1`
 
 **Dynamic Facts**:
-
 ```prolog
 :- dynamic player_position/2.
 :- dynamic player_inventory/2.        % (Arrows, Rocks)
@@ -41,7 +38,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 **Dependencies**: `geometry.pl` (for rectangle collision in pickup detection)
 
 **Test Results**: 8/8 tests passing
-
 - ✓ Player position - update and get
 - ✓ Player inventory - initialization (2 arrows, 3 rocks)
 - ✓ Player inventory - use arrow
@@ -54,13 +50,11 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 ---
 
 ### 2. **wumpus_ai.pl** (378 lines)
-
 **Location**: `prolog/entities/wumpus_ai.pl`
 
 **Purpose**: Complete Wumpus AI state machine with sound-based decision making and behavioral logic.
 
 **Exports**: 24 predicates
-
 - **Initialization**: `init_wumpus_ai/2`
 - **State Management**: `get_wumpus_state/2`, `set_wumpus_state/2`
 - **Target Management**: `get_wumpus_target/3`, `set_wumpus_target/3`
@@ -71,8 +65,7 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 - **Decisions**: `decide_wumpus_action/10`, `decide_no_sound_action/4`, `decide_target_reached/4`, `should_attack/6`
 - **Position**: `reached_target/5`
 
-**AI States**:
-
+**AI States**: 
 - `roaming` - Default patrol behavior
 - `investigating` - Heard something, moving to investigate
 - `chasing` - Detected player, actively pursuing
@@ -82,7 +75,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 - `dead` - Defeated
 
 **Dynamic Facts**:
-
 ```prolog
 :- dynamic wumpus_ai_state/2.         % (WumpusID, State)
 :- dynamic wumpus_target/3.           % (WumpusID, X, Y)
@@ -94,7 +86,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 ```
 
 **Key Behavior**:
-
 - **Sound Detection**: Rock impacts → investigating, loud player sounds → chasing
 - **Roaring System**: Only roars on state transitions (NOT during active combat)
   - Patrol/roaming → investigating: roar
@@ -105,7 +96,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 **Dependencies**: `geometry.pl` (for distance calculations)
 
 **Test Results**: 8/8 tests passing
-
 - ✓ Wumpus AI - initialization (roaming state)
 - ✓ Wumpus AI - state change
 - ✓ Wumpus AI - target setting
@@ -118,27 +108,23 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 ---
 
 ### 3. **treasure.pl** (172 lines)
-
 **Location**: `prolog/entities/treasure.pl`
 
 **Purpose**: Treasure/mimic chest system and victory exit management.
 
 **Exports**: 14 predicates
-
 - **System Setup**: `setup_treasure_system/6`, `setup_chest/4`, `get_all_chests/1`
 - **Chest Queries**: `is_treasure/3`, `is_mimic/4`, `distance_to_chest/5`
 - **Chest Actions**: `open_chest/3`, `collect_treasure/0`, `is_treasure_collected/0`
 - **Exit System**: `init_exit/2`, `unlock_exit/0`, `can_exit_game/4`, `get_exit_position/2`, `is_exit_unlocked/0`
 
 **Chest System**:
-
 - **Total Chests**: 3 (randomly positioned)
 - **Distribution**: 1 real treasure, 2 mimics
 - **Assignment**: Random (using random_permutation)
 - **Open Results**: `treasure_found`, `mimic_activated`, `already_opened`, `no_chest`
 
 **Dynamic Facts**:
-
 ```prolog
 :- dynamic treasure/3.            % (ID, X, Y)
 :- dynamic mimic/4.               % (ID, X, Y, Activated)
@@ -148,7 +134,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 ```
 
 **Victory Conditions** (`can_exit_game/4`):
-
 1. Treasure collected: `treasure_collected(true)`
 2. Exit unlocked: `exit_unlocked(true)`
 3. Player at exit: Rectangle collision with exit portal (48x48)
@@ -156,7 +141,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 **Dependencies**: `geometry.pl` (for exit collision detection)
 
 **Test Results**: 7/7 tests passing
-
 - ✓ Treasure - system setup (3 chests created)
 - ✓ Treasure - chest distribution (1 treasure, 2 mimics)
 - ✓ Treasure - distance calculation
@@ -172,7 +156,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 **Test Suite**: `prolog/test_phase2_modules.pl`
 
 **Results**: 4/4 integration tests passing
-
 - ✓ Integration - player position in map
 - ✓ Integration - player combat ready
 - ✓ Integration - wumpus chasing player
@@ -185,7 +168,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 **File**: `game_logic_modular.pl`
 
 **Changes**:
-
 ```prolog
 % Phase 2 - Entity Modules
 :- use_module('prolog/entities/player.pl').
@@ -194,7 +176,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 ```
 
 **Current Module Load Order**:
-
 1. Core: geometry, movement, map_system
 2. Entities: player, wumpus_ai, treasure
 3. Original: `include('game_logic.pl')` for non-modularized features
@@ -203,18 +184,17 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 
 ## Comparison
 
-| Metric         | Original       | Modular           | Change                  |
-| -------------- | -------------- | ----------------- | ----------------------- |
-| Player code    | ~150 lines     | 196 lines         | +31% (better organized) |
-| Wumpus AI code | ~260 lines     | 378 lines         | +45% (comprehensive)    |
-| Treasure code  | ~65 lines      | 172 lines         | +165% (complete system) |
-| **Total**      | **~475 lines** | **746 lines**     | **+57%**                |
-| Files          | 1 monolithic   | 3 focused modules | Modular                 |
-| Exports        | Implicit       | 56 explicit       | Python-compatible       |
-| Dependencies   | Tangled        | Explicit          | Clear hierarchy         |
+| Metric | Original | Modular | Change |
+|--------|----------|---------|--------|
+| Player code | ~150 lines | 196 lines | +31% (better organized) |
+| Wumpus AI code | ~260 lines | 378 lines | +45% (comprehensive) |
+| Treasure code | ~65 lines | 172 lines | +165% (complete system) |
+| **Total** | **~475 lines** | **746 lines** | **+57%** |
+| Files | 1 monolithic | 3 focused modules | Modular |
+| Exports | Implicit | 56 explicit | Python-compatible |
+| Dependencies | Tangled | Explicit | Clear hierarchy |
 
 **Note**: Line count increase is due to:
-
 - Comprehensive documentation
 - Explicit module declarations
 - Proper spacing and formatting
@@ -228,7 +208,6 @@ Phase 2 successfully refactored all entity-related logic from the monolithic `ga
 All entity modules designed for seamless Python integration:
 
 **player.pl** (18 exports):
-
 ```python
 # Position
 prolog.query("update_player_position(100, 200)")
@@ -248,7 +227,6 @@ prolog.query("can_pickup_arrow(X, Y, 32, 32, ID)")
 ```
 
 **wumpus_ai.pl** (24 exports):
-
 ```python
 # State
 prolog.query("init_wumpus_ai(1, 300)")
@@ -262,7 +240,6 @@ prolog.query("can_roar(1, 1000, ShouldRoar)")
 ```
 
 **treasure.pl** (14 exports):
-
 ```python
 # Setup
 prolog.query("setup_treasure_system(100, 100, 200, 200, 300, 300)")
@@ -280,20 +257,17 @@ prolog.query("can_exit_game(800, 600, 32, 48)")
 ## Lessons Learned
 
 ### What Worked Well
-
 1. **Systematic Extraction**: grep → read → create → test approach was efficient
 2. **Focused Modules**: Single responsibility principle made code easier to understand
 3. **Comprehensive Testing**: 28 tests caught the arity mismatch issue immediately
 4. **Clear Dependencies**: Explicit use_module directives prevented confusion
 
 ### Challenges Overcome
-
 1. **Arity Mismatch**: `decide_wumpus_action` exported as /9 but defined as /10 (fixed)
 2. **Test State Management**: Treasure collection persisted across tests (fixed with proper initialization order)
 3. **Complex AI Logic**: Wumpus AI required careful extraction of state machine (378 lines)
 
 ### Best Practices Established
-
 1. Always export predicates with correct arity
 2. Initialize test state in proper order (setup before actions)
 3. Document dynamic facts clearly
@@ -307,7 +281,6 @@ prolog.query("can_exit_game(800, 600, 32, 48)")
 **Focus**: System modules (combat, spawning, game state)
 
 **Planned Modules**:
-
 1. **combat.pl**: Projectile system (arrows, rocks), collision detection, damage calculations
 2. **spawning.pl**: Entity spawn management, safe position selection, spawn waves
 3. **game_state.pl**: Game state management (playing, paused, game_over, victory), time tracking, win/loss conditions
@@ -321,7 +294,6 @@ prolog.query("can_exit_game(800, 600, 32, 48)")
 ## Summary
 
 ✅ **Phase 2 Complete**
-
 - 3 entity modules created (746 lines)
 - 56 predicates exported
 - 28/28 tests passing
@@ -329,14 +301,12 @@ prolog.query("can_exit_game(800, 600, 32, 48)")
 - Ready for Phase 3
 
 **Quality Metrics**:
-
 - Code coverage: 100% (all predicates tested)
 - Integration: Verified with Phase 1 modules
 - Documentation: Comprehensive inline comments
 - Maintainability: Clear separation of concerns
 
 **Progress**: 6/9 modules complete (67% of refactoring done)
-
 - ✅ Phase 1: Core modules (geometry, movement, map_system)
 - ✅ Phase 2: Entity modules (player, wumpus_ai, treasure)
 - ⏳ Phase 3: System modules (combat, spawning, game_state)

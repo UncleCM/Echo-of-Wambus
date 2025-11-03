@@ -13,6 +13,11 @@
 :- use_module('prolog/entities/wumpus_ai.pl').
 :- use_module('prolog/entities/treasure.pl').
 
+% Load system modules (Phase 3 - Complete)
+:- use_module('prolog/systems/combat.pl').
+:- use_module('prolog/systems/spawning.pl').
+:- use_module('prolog/systems/game_state.pl').
+
 % Load the original game_logic.pl for predicates not yet modularized
 % This ensures all game features still work during the refactoring process
 :- include('game_logic.pl').
