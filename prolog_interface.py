@@ -102,6 +102,109 @@ class PrologEngine:
                 return 0, 0
         return 0, 0
     
+    # =========================================================================
+    # ENTITY SIZE SYSTEM
+    # =========================================================================
+    
+    def init_entity_sizes(self):
+        """Initialize entity size database"""
+        query = "init_entity_sizes"
+        self._query(query)
+        
+        # Debug: verify entity sizes were initialized
+        test_query = "entity_size(wumpus, W, H)"
+        results = self._query(test_query)
+        if results:
+            print(f"[PrologEngine] ✓ Entity sizes initialized - Wumpus: {results[0]['W']}x{results[0]['H']}")
+        else:
+            print("[PrologEngine] ⚠ WARNING: entity_size(wumpus, W, H) query failed!")
+    
+    def get_entity_size(self, entity_type):
+        """Get entity dimensions"""
+        query = f"get_entity_size({entity_type}, Width, Height)"
+        results = self._query(query)
+        if results:
+            try:
+                return int(results[0]['Width']), int(results[0]['Height'])
+            except (KeyError, IndexError, ValueError):
+                return 32, 32
+        return 32, 32
+    
+    def is_safe_for_entity(self, entity_type, x, y):
+        """Check if position is safe for entity type"""
+        query = f"is_safe_for_entity_type({entity_type}, {x}, {y})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def is_safe_for_entity_size(self, x, y, width, height):
+        """Check if position is safe for entity with specific size"""
+        query = f"is_safe_for_entity({x}, {y}, {width}, {height})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def update_wumpus_position_with_id(self, wumpus_id, x, y):
+        """Update Wumpus position by ID"""
+        query = f"update_wumpus_position({wumpus_id}, {x}, {y})"
+        self._query(query)
+    
+    def get_wumpus_position(self, wumpus_id):
+        """Get Wumpus position by ID"""
+        query = f"get_wumpus_position({wumpus_id}, X, Y)"
+        results = self._query(query)
+        if results:
+            try:
+                return int(results[0]['X']), int(results[0]['Y'])
+            except (KeyError, IndexError, ValueError):
+                return None
+        return None
+    
+    def find_nearest_reachable(self, entity_type, from_x, from_y, target_x, target_y):
+        """Find nearest reachable position to target for entity type"""
+        query = f"find_nearest_reachable({entity_type}, {from_x}, {from_y}, {target_x}, {target_y}, NearestX, NearestY)"
+        results = self._query(query)
+        if results:
+            try:
+                return (int(results[0]['NearestX']), int(results[0]['NearestY']))
+            except (KeyError, IndexError, ValueError):
+                return None
+        return None
+    
+    def wumpus_can_reach_target(self, wumpus_id, target_x, target_y):
+        """Check if Wumpus can reach target position"""
+        query = f"wumpus_can_reach_target({wumpus_id}, {target_x}, {target_y})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def generate_wumpus_patrol_route(self, wumpus_id, count):
+        """Generate patrol waypoints that Wumpus can reach"""
+        query = f"generate_wumpus_patrol_route({wumpus_id}, {count}, Waypoints)"
+        results = self._query(query)
+        if results:
+            try:
+                waypoints_str = str(results[0]['Waypoints'])
+                # Parse Prolog list format: [(X1, Y1), (X2, Y2), ...]
+                import re
+                matches = re.findall(r'\((\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)\)', waypoints_str)
+                waypoints = [(int(float(x)), int(float(y))) for x, y in matches]
+                if waypoints:
+                    print(f"[PrologEngine] Generated {len(waypoints)} patrol waypoints for Wumpus {wumpus_id}")
+                    print(f"[PrologEngine] Waypoints: {waypoints}")  # DEBUG: Show actual waypoints
+                    return waypoints
+                else:
+                    print(f"[PrologEngine] Prolog returned empty waypoint list for Wumpus {wumpus_id}")
+                    return []
+            except Exception as e:
+                print(f"[PrologEngine] Failed to parse patrol waypoints: {e}")
+                print(f"[PrologEngine] Raw result: {waypoints_str}")
+                return []
+        else:
+            print(f"[PrologEngine] Prolog query failed for Wumpus {wumpus_id} waypoint generation")
+            return []
+    
+    # =========================================================================
+    # LEGACY METHODS (kept for compatibility)
+    # =========================================================================
+    
     def is_safe_position(self, x, y, w, h, feet_height=10):
         query = f"is_safe_position({x}, {y}, {w}, {h}, {feet_height})"
         results = self._query(query)

@@ -1,5 +1,6 @@
 from Settings import *
 from entity import Entity
+import random
 
 
 class WumpusAIState:
@@ -65,7 +66,7 @@ class Wumpus(Entity):
         self.patrol_route = []  # List of waypoints for patrol
         self.current_waypoint_index = 0  # Current waypoint in patrol route
         self.patrol_mode = True  # Whether using patrol route or random roaming
-        self._setup_patrol_route()  # Initialize patrol route
+        # NOTE: _setup_patrol_route() will be called AFTER sprite is set up
         
         # Initialize AI in Prolog (authoritative state)
         if self.prolog and self.prolog.available:
@@ -87,35 +88,110 @@ class Wumpus(Entity):
         for anim_name, frames in self.animations.items():
             print(f"  {anim_name}: {len(frames)} frames")
 
-        # Setup sprite and hitbox
+        # Setup sprite and hitbox (MUST be before patrol route setup)
         self.current_animation = "idle"
         initial_image = self.animations[self.current_animation][0]
-        self.setup_sprite(initial_image, hitbox_inflate=(-80, -80))
+        # Adjust hitbox to be 32x32 (same as player) for better navigation
+        # Sprite is scaled 2x, so we need to inflate by -(sprite_size - 32)
+        # Assuming sprite is around 128x150 after scaling, inflate by (-96, -118) to get 32x32
+        self.setup_sprite(initial_image, hitbox_inflate=(-96, -118))
 
-        print(f"[Wumpus] Initialized at {pos}, HP: {self.health}/{self.max_health}")
-        print(f"[Wumpus] Hearing: {self.hearing_radius}px (base), +{self.chase_hearing_bonus}px (chase)")
-        print(f"[Wumpus] AI: Sound-based detection, map knowledge enabled")
-        print(f"[Wumpus] Patrol route: {len(self.patrol_route)} waypoints")
+        # ✅ NOW setup patrol route (after hitbox_rect is created)
+        self._setup_patrol_route()
+
+        print(f"[Wumpus {self.wumpus_id}] Initialized at {pos}, HP: {self.health}/{self.max_health}")
+        print(f"[Wumpus {self.wumpus_id}] Hearing: {self.hearing_radius}px (base), +{self.chase_hearing_bonus}px (chase)")
+        print(f"[Wumpus {self.wumpus_id}] AI: Sound-based detection, map knowledge enabled")
+        print(f"[Wumpus {self.wumpus_id}] Patrol route: {len(self.patrol_route)} waypoints")
     
     def _setup_patrol_route(self):
         """Setup patrol route with safe waypoints from map knowledge"""
         if not self.map_knowledge:
             return
         
-        # Generate 5-8 random patrol waypoints in safe positions
-        import random
-        num_waypoints = random.randint(5, 8)
+        # ✅ USE PROLOG to generate reachable waypoints (NEW)
+        if self.prolog and self.prolog.available:
+            # Update Wumpus position in Prolog
+            self.prolog.update_wumpus_position_with_id(
+                self.wumpus_id,
+                int(self.pos.x),
+                int(self.pos.y)
+            )
+            
+            # Let Prolog generate waypoints that Wumpus can actually reach
+            num_waypoints = random.randint(5, 8)
+            waypoints = self.prolog.generate_wumpus_patrol_route(
+                self.wumpus_id,
+                num_waypoints
+            )
+            
+            # VALIDATE CONNECTIVITY: Filter out unreachable waypoints using A*
+            if waypoints and len(waypoints) > 0:
+                validated_waypoints = []
+                current_pos = self.pos
+                
+                for waypoint in waypoints:
+                    # Check if we can pathfind from current position to this waypoint
+                    test_path = self.map_knowledge.find_path_astar(
+                        (current_pos.x, current_pos.y),
+                        waypoint,
+                        entity_width=32,
+                        entity_height=32
+                    )
+                    
+                    if test_path:
+                        # This waypoint is reachable!
+                        validated_waypoints.append(waypoint)
+                        current_pos = pygame.math.Vector2(waypoint)  # Next waypoint must be reachable from this one
+                
+                # Use validated waypoints if we have at least 3
+                if len(validated_waypoints) >= 3:
+                    self.patrol_route = [pygame.math.Vector2(x, y) for x, y in validated_waypoints]
+                    self.patrol_mode = True
+                    print(f"[Wumpus {self.wumpus_id}] Prolog generated {len(waypoints)} waypoints, {len(validated_waypoints)} validated as reachable")
+                    return
+                else:
+                    print(f"[Wumpus {self.wumpus_id}] Prolog generated {len(waypoints)} waypoints but only {len(validated_waypoints)} reachable - using fallback")
+            else:
+                print(f"[Wumpus {self.wumpus_id}] Prolog generated no waypoints, using improved fallback")
         
-        for _ in range(num_waypoints):
-            safe_pos = self.map_knowledge.get_safe_random_position()
-            if safe_pos:
-                self.patrol_route.append(pygame.math.Vector2(safe_pos))
+        # IMPROVED FALLBACK: Generate waypoints with connectivity validation
+        num_waypoints = random.randint(4, 6)  # Reduced from 5-8 to avoid long generation times
+        max_attempts = 20  # Reduced from 50 to speed up initialization
+        current_pos = self.pos
         
-        if self.patrol_route:
+        for i in range(num_waypoints):
+            for _ in range(max_attempts):  # Use _ for unused loop variable
+                safe_pos = self.map_knowledge.get_safe_random_position()
+                if not safe_pos:
+                    continue
+                
+                # Validate that we can pathfind to this position
+                test_path = self.map_knowledge.find_path_astar(
+                    (current_pos.x, current_pos.y),
+                    safe_pos,
+                    entity_width=32,
+                    entity_height=32
+                )
+                
+                if test_path:
+                    # This waypoint is reachable!
+                    waypoint = pygame.math.Vector2(safe_pos)
+                    self.patrol_route.append(waypoint)
+                    current_pos = waypoint  # Next waypoint must be reachable from this one
+                    break
+            
+            # If we couldn't find a reachable waypoint after max_attempts, stop trying
+            if len(self.patrol_route) == i:
+                print(f"[Wumpus {self.wumpus_id}] Stopped waypoint generation after {i} waypoints (no more reachable positions)")
+                break
+        
+        if self.patrol_route and len(self.patrol_route) >= 2:
             self.patrol_mode = True
-            print(f"[Wumpus] Created patrol route with {len(self.patrol_route)} waypoints")
+            print(f"[Wumpus {self.wumpus_id}] Created validated patrol route with {len(self.patrol_route)} waypoints (fallback)")
         else:
-            print("[Wumpus] Failed to create patrol route, using random roaming")
+            print(f"[Wumpus {self.wumpus_id}] ⚠️ Failed to create patrol route - will roam instead")
+            self.patrol_mode = False
     
     @property
     def pos(self):
@@ -362,10 +438,25 @@ class Wumpus(Entity):
             
             # Set target if provided
             if target_x != 0 or target_y != 0:
-                self.target_position = pygame.math.Vector2(target_x, target_y)
-                self.prolog.set_wumpus_target(self.wumpus_id, target_x, target_y)
-                self.current_path = None  # Clear path when changing target
-                self.path_index = 0
+                # ✅ Use Prolog to find nearest reachable position (NEW)
+                reachable_pos = self.prolog.find_nearest_reachable(
+                    'wumpus',
+                    int(self.pos.x), int(self.pos.y),
+                    target_x, target_y
+                )
+                
+                if reachable_pos:
+                    self.target_position = pygame.math.Vector2(reachable_pos)
+                    self.prolog.set_wumpus_target(self.wumpus_id, reachable_pos[0], reachable_pos[1])
+                    self.current_path = None  # Clear path when changing target
+                    self.path_index = 0
+                    print(f"[Wumpus {self.wumpus_id}] Target adjusted to reachable position: {reachable_pos}")
+                else:
+                    # Cannot reach target at all, ignore this sound
+                    print(f"[Wumpus {self.wumpus_id}] Cannot reach target, ignoring sound")
+                    # Revert state change
+                    self.prolog.set_wumpus_state(self.wumpus_id, self.ai_state)
+                    return
             
             # Roar if Prolog says so
             if should_roar:
@@ -504,11 +595,22 @@ class Wumpus(Entity):
             if self.map_knowledge:
                 # Calculate path if we don't have one or reached end of path
                 if not self.current_path or self.path_index >= len(self.current_path):
+                    # Pass Wumpus size (32x32, same as player) to A* for entity-aware pathfinding
                     self.current_path = self.map_knowledge.find_path_astar(
                         (self.pos.x, self.pos.y),
-                        (current_waypoint.x, current_waypoint.y)
+                        (current_waypoint.x, current_waypoint.y),
+                        entity_width=32,
+                        entity_height=32
                     )
                     self.path_index = 0
+                    
+                    # If no path found, skip this waypoint
+                    if not self.current_path:
+                        print(f"[Wumpus {self.wumpus_id}] No path to waypoint {self.current_waypoint_index + 1} at ({int(current_waypoint.x)}, {int(current_waypoint.y)}) from ({int(self.pos.x)}, {int(self.pos.y)})")
+                        self.current_waypoint_index += 1
+                        if self.current_waypoint_index >= len(self.patrol_route):
+                            self.current_waypoint_index = 0
+                        return
                 
                 # Follow path
                 if self.current_path and self.path_index < len(self.current_path):
@@ -595,7 +697,9 @@ class Wumpus(Entity):
             if not self.current_path or self.path_index >= len(self.current_path):
                 self.current_path = self.map_knowledge.find_path_astar(
                     (self.pos.x, self.pos.y),
-                    (self.target_position.x, self.target_position.y)
+                    (self.target_position.x, self.target_position.y),
+                    entity_width=32,
+                    entity_height=32
                 )
                 self.path_index = 0
             
@@ -678,7 +782,9 @@ class Wumpus(Entity):
             if not self.current_path or self._chase_path_timer >= 30:
                 self.current_path = self.map_knowledge.find_path_astar(
                     (self.pos.x, self.pos.y),
-                    (self.target_position.x, self.target_position.y)
+                    (self.target_position.x, self.target_position.y),
+                    entity_width=32,
+                    entity_height=32
                 )
                 self.path_index = 0
                 self._chase_path_timer = 0
@@ -894,7 +1000,13 @@ class Wumpus(Entity):
         # Use speed override for chasing
         movement_speed = speed_override if speed_override is not None else self.speed
         
-        # Check if current direction leads to danger
+        # Skip pit avoidance if following A* path (path already avoids pits)
+        if self.current_path and self.path_index < len(self.current_path):
+            # Trust A* pathfinding - it already routes around pits
+            self.move(dt, speed_override=movement_speed)
+            return
+        
+        # Only use manual pit avoidance when NOT following A* path
         if self.map_knowledge:
             # Look ahead
             look_ahead_distance = 50

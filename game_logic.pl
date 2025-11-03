@@ -15,6 +15,10 @@
 :- dynamic safe_position/2.      % safe_position(X, Y) - cached safe positions
 :- dynamic cached_path/3.        % cached_path(StartPos, GoalPos, Path) - pathfinding cache
 
+% ======= ENTITY SIZE SYSTEM =======
+:- dynamic entity_size/3.        % entity_size(Type, Width, Height)
+:- dynamic wumpus_position/2.    % wumpus_position(WumpusID, X, Y) - Track each Wumpus
+
 % Initialize game state
 init_game :-
     retractall(player_position(_, _)),
@@ -29,6 +33,9 @@ init_game :-
     retractall(grid_size(_, _)),
     retractall(safe_position(_, _)),
     retractall(cached_path(_, _, _)),
+    % Clear entity size facts
+    retractall(entity_size(_, _, _)),
+    retractall(wumpus_position(_, _, _)),
     % Clear projectile system
     init_projectile_system,
     % Clear Wumpus AI system
@@ -179,11 +186,74 @@ resolve_movement(CurrentX, CurrentY, DeltaX, DeltaY, PlayerW, PlayerH, FinalX, F
     update_player_position(FinalX, FinalY).
 
 % ============================================================================
+% ENTITY SIZE SYSTEM
+% ============================================================================
+
+% Initialize entity sizes (called once at game start)
+init_entity_sizes :-
+    retractall(entity_size(_, _, _)),
+    assertz(entity_size(player, 32, 32)),
+    assertz(entity_size(wumpus, 32, 32)),  % Same size as player for better navigation
+    assertz(entity_size(arrow, 16, 16)),
+    assertz(entity_size(rock, 20, 20)).
+
+% Get entity size by type
+get_entity_size(Type, Width, Height) :-
+    entity_size(Type, Width, Height), !.
+% Fallback for unknown types
+get_entity_size(_, 32, 32).
+
+% Update Wumpus position (multi-Wumpus support)
+update_wumpus_position(WumpusID, X, Y) :-
+    retractall(wumpus_position(WumpusID, _, _)),
+    assertz(wumpus_position(WumpusID, X, Y)).
+
+% Get Wumpus position
+get_wumpus_position(WumpusID, X, Y) :-
+    wumpus_position(WumpusID, X, Y).
+
+% Check if entity bounding box collides with anything
+entity_collides(X, Y, Width, Height) :-
+    % Calculate bounding box
+    LeftX is X - Width / 2,
+    TopY is Y - Height / 2,
+    
+    % Check collision with any collision box
+    collision_box(BoxX, BoxY, BoxW, BoxH),
+    rects_collide(LeftX, TopY, Width, Height, BoxX, BoxY, BoxW, BoxH).
+
+% Check if entity falls into pit
+entity_falls(X, Y, Width, Height) :-
+    % Calculate bounding box
+    LeftX is X - Width / 2,
+    TopY is Y - Height / 2,
+    
+    % Check overlap with any fall zone
+    fall_zone(FallX, FallY, FallW, FallH),
+    rects_collide(LeftX, TopY, Width, Height, FallX, FallY, FallW, FallH).
+
+% Check if position is safe for entity of given size
+is_safe_for_entity(X, Y, Width, Height) :-
+    number(X), number(Y), number(Width), number(Height),  % Ensure all are numbers!
+    \+ entity_collides(X, Y, Width, Height),
+    \+ entity_falls(X, Y, Width, Height).
+
+% Overload: Check if entity type can be at position (with optional buffer)
+is_safe_for_entity(EntityType, X, Y, _Buffer) :-
+    atom(EntityType),  % Ensure first arg is an atom (entity type)!
+    get_entity_size(EntityType, Width, Height),
+    is_safe_for_entity(X, Y, Width, Height).
+
+% Check if entity type can be at position
+is_safe_for_entity_type(EntityType, X, Y) :-
+    get_entity_size(EntityType, Width, Height),
+    is_safe_for_entity(X, Y, Width, Height).
+
+% ============================================================================
 % WUMPUS AI LOGIC
 % ============================================================================
 
 % Dynamic facts for Wumpus state
-:- dynamic wumpus_position/2.
 :- dynamic wumpus_state/1.
 
 % Initialize Wumpus state
@@ -631,6 +701,11 @@ init_map_system(MapW, MapH, TileW, TileH, CellSize) :-
     GridCountY is ceiling(MapH / CellSize),
     asserta(grid_size(CellSize, [GridCountX, GridCountY])).
 
+% Return map dimensions and cell size
+map_dimensions(MapW, MapH, CellSize) :-
+    map_size(MapW, MapH),
+    grid_size(CellSize, _), !.
+
 % Build navigation grid from collision/fall data
 build_navigation_grid :-
     grid_size(CellSize, [MaxX, MaxY]),
@@ -716,6 +791,37 @@ random_safe_position(X, Y) :-
     random(0, Count, Index),
     nth0(Index, Positions, [X, Y]).
 
+% Get random safe position for Wumpus (96x96 entity)
+random_wumpus_safe_position(X, Y) :-
+    % Get map dimensions
+    map_dimensions(MapWidth, MapHeight, _),
+    % Wumpus is now 32x32 (same as player)
+    WumpusW = 32,
+    WumpusH = 32,
+    % Calculate valid range (avoid spawning partially off-map)
+    MaxX is MapWidth - WumpusW,
+    MaxY is MapHeight - WumpusH,
+    % Try random positions until finding a safe one
+    between(1, 50, _),  % Try up to 50 times
+    random(0, MaxX, RandX),
+    random(0, MaxY, RandY),
+    X is RandX,
+    Y is RandY,
+    % Check if this position is safe for Wumpus
+    is_safe_for_entity(wumpus, X, Y, 0),
+    % Also avoid pits
+    \+ is_near_pit(X, Y, 60),
+    !.
+
+% Fallback: if no random position found, use cached safe positions
+% and find one that works for Wumpus
+random_wumpus_safe_position(X, Y) :-
+    findall([PX, PY], safe_position(PX, PY), Positions),
+    member([X, Y], Positions),
+    is_safe_for_entity(wumpus, X, Y, 0),
+    \+ is_near_pit(X, Y, 60),
+    !.
+
 % Get safe position that's far from other positions
 safe_position_far_from(X, Y, OtherPositions, MinDistance) :-
     safe_position(X, Y),
@@ -740,6 +846,151 @@ count_safe_positions(Count) :-
     length(Positions, Count).
 
 % ============================================================================
+% REACHABILITY & PATHFINDING VALIDATION
+% ============================================================================
+
+% Find nearest reachable position to target for entity type
+find_nearest_reachable(EntityType, _FromX, _FromY, TargetX, TargetY, NearestX, NearestY) :-
+    get_entity_size(EntityType, Width, Height),
+    
+    % Try target position first
+    (   is_safe_for_entity(TargetX, TargetY, Width, Height) ->
+        NearestX = TargetX,
+        NearestY = TargetY
+    ;
+        % Target not safe, find nearby safe position
+        find_nearby_safe_position(TargetX, TargetY, Width, Height, 500, NearestX, NearestY)
+    ).
+
+% Find safe position near target within MaxRadius
+find_nearby_safe_position(TargetX, TargetY, Width, Height, MaxRadius, SafeX, SafeY) :-
+    % Try multiple radii: 50, 100, 150, 200, 300, 500
+    member(Radius, [50, 100, 150, 200, 300, 500]),
+    Radius =< MaxRadius,
+    
+    % Try multiple angles: 0, 30, 60, ..., 330
+    member(Angle, [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]),
+    
+    % Calculate position
+    AngleRad is Angle * 3.14159265359 / 180,
+    SafeX is TargetX + Radius * cos(AngleRad),
+    SafeY is TargetY + Radius * sin(AngleRad),
+    
+    % Check if safe
+    is_safe_for_entity(SafeX, SafeY, Width, Height),
+    !.  % Cut - found first valid position
+
+% Check if Wumpus can reach target (simple version - just checks if target is safe)
+wumpus_can_reach_target(_WumpusID, TargetX, TargetY) :-
+    % Get Wumpus size
+    get_entity_size(wumpus, Width, Height),
+    
+    % Check if target position is safe for Wumpus
+    is_safe_for_entity(TargetX, TargetY, Width, Height).
+
+% Generate patrol waypoints for Wumpus that are reachable
+generate_wumpus_patrol_route(WumpusID, Count, Waypoints) :-
+    % Get Wumpus current position
+    wumpus_position(WumpusID, CurrentX, CurrentY),
+    
+    % Get Wumpus size (now 32x32, same as player)
+    get_entity_size(wumpus, Width, Height),
+    
+    % Get all safe positions for Wumpus size (with minimum spacing)
+    findall((X, Y),
+            (safe_position(X, Y),
+             is_safe_for_entity(X, Y, Width, Height),
+             \+ too_close(X, Y, CurrentX, CurrentY, 150)),  % At least 150px from spawn
+            SafePositions),
+    
+    % Build connected patrol route (each waypoint reachable from previous)
+    (   SafePositions \= [] ->
+        build_connected_route(CurrentX, CurrentY, SafePositions, Count, [], TempWaypoints),
+        % Return at least 1 waypoint even if Count not reached
+        (   TempWaypoints \= [] ->
+            Waypoints = TempWaypoints
+        ;
+            % Fallback: return first N random positions
+            take_n_random(SafePositions, Count, Waypoints)
+        )
+    ;
+        % No safe positions at all
+        Waypoints = []
+    ).
+
+% Build a route where each waypoint is reachable from the previous one
+build_connected_route(_, _, _, 0, Acc, Result) :-
+    reverse(Acc, Result), !.
+
+build_connected_route(_, _, [], _, Acc, Result) :-
+    % No more candidates, return what we have
+    reverse(Acc, Result), !.
+
+build_connected_route(FromX, FromY, CandidatePositions, Remaining, Acc, Result) :-
+    Remaining > 0,
+    
+    % Find positions not too close to already selected waypoints (min 250px spacing)
+    exclude_nearby_positions(CandidatePositions, Acc, 250, FilteredPositions),
+    
+    % Pick a random position from filtered list
+    (   FilteredPositions \= [] ->
+        random_member((NextX, NextY), FilteredPositions),
+        
+        % Check if it's reasonably reachable (relaxed distance check for 32x32 Wumpus)
+        Distance is sqrt((NextX - FromX)**2 + (NextY - FromY)**2),
+        (   Distance < 1000 ->  % Max jump distance between waypoints (increased for larger maps)
+            % Add to route and continue
+            NewRemaining is Remaining - 1,
+            build_connected_route(NextX, NextY, CandidatePositions, NewRemaining, [(NextX, NextY)|Acc], Result)
+        ;
+            % Too far, try another candidate
+            select((NextX, NextY), CandidatePositions, RemainingCandidates),
+            build_connected_route(FromX, FromY, RemainingCandidates, Remaining, Acc, Result)
+        )
+    ;
+        % No more valid positions, return what we have
+        reverse(Acc, Result)
+    ).
+
+% Exclude positions too close to any position in list
+exclude_nearby_positions([], _, _, []).
+exclude_nearby_positions([(X, Y)|Rest], NearbyList, MinDist, Result) :-
+    (   is_far_from_all(X, Y, NearbyList, MinDist) ->
+        exclude_nearby_positions(Rest, NearbyList, MinDist, RestResult),
+        Result = [(X, Y)|RestResult]
+    ;
+        exclude_nearby_positions(Rest, NearbyList, MinDist, Result)
+    ).
+
+% Check if position is far from all positions in list
+is_far_from_all(_, _, [], _).
+is_far_from_all(X, Y, [(NX, NY)|Rest], MinDist) :-
+    Distance is sqrt((X - NX)**2 + (Y - NY)**2),
+    Distance >= MinDist,
+    is_far_from_all(X, Y, Rest, MinDist).
+
+% Check if two positions are too close
+too_close(X1, Y1, X2, Y2, MinDist) :-
+    Distance is sqrt((X1 - X2)**2 + (Y1 - Y2)**2),
+    Distance < MinDist.
+
+% Helper: Randomly select N items from list
+random_select_n(_, 0, []) :- !.
+random_select_n([], _, []) :- !.
+random_select_n(List, N, [Selected|Rest]) :-
+    length(List, Len),
+    Len > 0,
+    random_between(0, Len, RandIndex),
+    Index is RandIndex mod Len,
+    nth0(Index, List, Selected),
+    select(Selected, List, Remaining),
+    N1 is N - 1,
+    random_select_n(Remaining, N1, Rest).
+
+% Alias for consistency
+take_n_random(List, N, Result) :- random_select_n(List, N, Result).
+
+% ============================================================================
 % GAME STATE MANAGEMENT SYSTEM
 % ============================================================================
 
@@ -751,6 +1002,10 @@ count_safe_positions(Count) :-
 
 % Initialize complete game state
 init_game_state :-
+    % Randomize seed for random number generation
+    get_time(T),
+    Seed is round(T * 1000000) mod 2147483647,
+    set_random(seed(Seed)),
     retractall(game_state(_)),
     retractall(time_remaining(_)),
     retractall(player_health(_)),
@@ -979,7 +1234,7 @@ set_last_roar_time(WumpusID, Time) :-
 
 % Decide action based on sound detection
 % Returns: NewState, ShouldRoar, NewTarget(X,Y)
-decide_wumpus_action(WumpusID, SoundType, SoundX, SoundY, Loudness, CurrentState, 
+decide_wumpus_action(_WumpusID, SoundType, SoundX, SoundY, Loudness, CurrentState, 
                      NewState, ShouldRoar, TargetX, TargetY) :-
     % Rock impact - LOUD distraction
     (SoundType = rock_impact ->
@@ -1024,7 +1279,7 @@ decide_wumpus_action(WumpusID, SoundType, SoundX, SoundY, Loudness, CurrentState
     )).
 
 % Decide action when no sound detected
-decide_no_sound_action(WumpusID, CurrentState, NewState, SearchTime) :-
+decide_no_sound_action(_WumpusID, CurrentState, NewState, SearchTime) :-
     % If chasing but lost sound, switch to searching
     (CurrentState = chasing ->
         NewState = searching,
@@ -1047,7 +1302,7 @@ reached_target(WumpusX, WumpusY, TargetX, TargetY, Threshold) :-
     DistSq =< ThresholdSq.
 
 % Decide behavior when target reached
-decide_target_reached(WumpusID, CurrentState, NewState, SearchTime) :-
+decide_target_reached(_WumpusID, CurrentState, NewState, SearchTime) :-
     % Investigating - arrived at sound location, start searching
     (CurrentState = investigating ->
         NewState = searching,
@@ -1169,14 +1424,28 @@ generate_wumpus_spawns_helper(N, MinDist, Acc, Result) :-
 
 % Helper: get safe position far from list of positions
 get_safe_position_far_from_list([], _, X, Y) :-
-    % No existing positions, just get any safe position
-    random_safe_position(X, Y), !.
+    % No existing positions, just get any Wumpus-safe position
+    random_wumpus_safe_position(X, Y), !.
 get_safe_position_far_from_list(ExistingPositions, MinDist, X, Y) :-
-    % Try multiple times to find position far from all existing
+    % Try with requested MinDist first
+    try_get_position_with_distance(ExistingPositions, MinDist, X, Y), !.
+get_safe_position_far_from_list(ExistingPositions, MinDist, X, Y) :-
+    % Fallback: try with reduced distance (75% of original)
+    ReducedDist is MinDist * 0.75,
+    ReducedDist > 100,  % Don't reduce below 100px
+    try_get_position_with_distance(ExistingPositions, ReducedDist, X, Y), !.
+get_safe_position_far_from_list(ExistingPositions, _, X, Y) :-
+    % Last resort: try with minimum distance 100px
+    try_get_position_with_distance(ExistingPositions, 100, X, Y), !.
+get_safe_position_far_from_list(_, _, X, Y) :-
+    % Absolute fallback: just get any safe position (no distance constraint)
+    random_wumpus_safe_position(X, Y).
+
+% Helper: try to find position with specific distance
+try_get_position_with_distance(ExistingPositions, MinDist, X, Y) :-
     between(1, 100, _),
-    random_safe_position(X, Y),
-    \+ too_close_to_any(X, Y, ExistingPositions, MinDist),
-    !.
+    random_wumpus_safe_position(X, Y),
+    \+ too_close_to_any(X, Y, ExistingPositions, MinDist).
 
 % Check if position is too close to any in list
 too_close_to_any(X, Y, [(EX, EY)|_], MinDist) :-

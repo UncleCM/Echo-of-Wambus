@@ -51,6 +51,7 @@ class Game:
         if self.prolog and self.prolog.available:
             self.prolog.init_game()  # Clear old facts
             self.prolog.init_game_state()  # Reset game state
+            self.prolog.init_entity_sizes()  # Initialize entity sizes (NEW)
         
         # =========================================================================
         # PHASE 5.1: NO MORE PYTHON STATE DUPLICATES
@@ -74,9 +75,9 @@ class Game:
         
         # Initialize Prolog map system FIRST (before MapKnowledge)
         if self.prolog and self.prolog.available:
-            # Get map dimensions
-            map_width = self.tmx_map.width * self.tmx_map.tilewidth * self.map_scale
-            map_height = self.tmx_map.height * self.tmx_map.tileheight * self.map_scale
+            # Get map dimensions (WITHOUT scale - Prolog uses logical coordinates)
+            map_width = self.tmx_map.width * self.tmx_map.tilewidth
+            map_height = self.tmx_map.height * self.tmx_map.tileheight
             
             # Initialize map system
             self.prolog.init_map_system(
@@ -223,8 +224,9 @@ class Game:
         wumpus_count = random.randint(3, 4)
         
         # Use Prolog to generate all spawn positions at once
+        # Reduced min_distance from 800 to 400 for 1280x1120 map (was for 2560x2240)
         if self.prolog and self.prolog.available:
-            positions = self.prolog.generate_wumpus_spawns(wumpus_count, min_distance=800)
+            positions = self.prolog.generate_wumpus_spawns(wumpus_count, min_distance=400)
         else:
             # Fallback
             positions = []

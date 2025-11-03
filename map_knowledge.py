@@ -259,8 +259,17 @@ class MapKnowledge:
         y = row * self.grid_size + self.grid_size // 2
         return (x, y)
     
-    def get_neighbors(self, row, col):
-        """Get valid neighboring cells (8-directional movement)"""
+    def get_neighbors(self, row, col, entity_width=32, entity_height=32):
+        """
+        Get valid neighboring cells (8-directional movement)
+        
+        Args:
+            row, col: Current grid position
+            entity_width, entity_height: Entity size in pixels (default: player 32x32)
+        
+        Returns:
+            List of valid neighboring (row, col) tuples
+        """
         neighbors = []
         
         # 8 directions: N, NE, E, SE, S, SW, W, NW
@@ -275,11 +284,57 @@ class MapKnowledge:
             
             # Check bounds
             if 0 <= new_row < len(self.navigation_grid) and 0 <= new_col < len(self.navigation_grid[0]):
-                # Check if cell is safe
-                if self.navigation_grid[new_row][new_col]:
+                # Check if cell is safe for entity size
+                if self._is_cell_safe_for_entity(new_row, new_col, entity_width, entity_height):
                     neighbors.append((new_row, new_col))
         
         return neighbors
+    
+    def _is_cell_safe_for_entity(self, row, col, entity_width, entity_height):
+        """
+        Check if a grid cell is safe for an entity of given size
+        
+        For larger entities (e.g., Wumpus 96x96), we need to check if there's enough
+        space in all directions to fit the entity's hitbox.
+        
+        Args:
+            row, col: Grid cell position
+            entity_width, entity_height: Entity size in pixels
+        
+        Returns:
+            bool: True if entity can safely occupy this cell
+        """
+        # If entity is player-sized (32x32), just check the single cell
+        if entity_width <= self.grid_size and entity_height <= self.grid_size:
+            return self.navigation_grid[row][col]
+        
+        # For larger entities (like Wumpus 96x96):
+        # Instead of requiring the ENTIRE hitbox to fit perfectly,
+        # we only check a smaller "core" area to allow movement through tighter spaces
+        # This is a compromise: strict enough to avoid walls, loose enough to allow navigation
+        
+        # Use a reduced footprint (50% of actual size) for pathfinding
+        # This allows Wumpus to navigate corridors designed for the player
+        effective_width = entity_width // 2
+        effective_height = entity_height // 2
+        
+        cells_wide = max(1, (effective_width + self.grid_size - 1) // self.grid_size)
+        cells_tall = max(1, (effective_height + self.grid_size - 1) // self.grid_size)
+        
+        # Check cells around the center
+        start_row = row - cells_tall // 2
+        start_col = col - cells_wide // 2
+        
+        for r in range(start_row, start_row + cells_tall):
+            for c in range(start_col, start_col + cells_wide):
+                # Check bounds
+                if r < 0 or r >= len(self.navigation_grid) or c < 0 or c >= len(self.navigation_grid[0]):
+                    return False
+                # Check if cell is safe
+                if not self.navigation_grid[r][c]:
+                    return False
+        
+        return True
     
     def heuristic(self, pos1, pos2):
         """Calculate heuristic (Euclidean distance) between two grid positions"""
@@ -288,13 +343,15 @@ class MapKnowledge:
         row2, col2 = pos2
         return math.sqrt((row2 - row1)**2 + (col2 - col1)**2)
     
-    def find_path_astar(self, start_world_pos, goal_world_pos):
+    def find_path_astar(self, start_world_pos, goal_world_pos, entity_width=32, entity_height=32):
         """
         Find path from start to goal using A* algorithm
         
         Args:
             start_world_pos: (x, y) tuple in world coordinates
             goal_world_pos: (x, y) tuple in world coordinates
+            entity_width: Entity width in pixels (default: 32 for player)
+            entity_height: Entity height in pixels (default: 32 for player)
             
         Returns:
             list of (x, y) world coordinates representing the path, or None if no path found
@@ -313,7 +370,11 @@ class MapKnowledge:
             return None
         if not (0 <= goal_row < len(self.navigation_grid) and 0 <= goal_col < len(self.navigation_grid[0])):
             return None
-        if not self.navigation_grid[start_row][start_col] or not self.navigation_grid[goal_row][goal_col]:
+        
+        # Check if start and goal are safe for entity size
+        if not self._is_cell_safe_for_entity(start_row, start_col, entity_width, entity_height):
+            return None
+        if not self._is_cell_safe_for_entity(goal_row, goal_col, entity_width, entity_height):
             return None
         
         # A* algorithm
@@ -338,8 +399,8 @@ class MapKnowledge:
                 path.reverse()
                 return path
             
-            # Check neighbors
-            for neighbor in self.get_neighbors(*current):
+            # Check neighbors (entity-size aware)
+            for neighbor in self.get_neighbors(*current, entity_width, entity_height):
                 # Calculate tentative g_score
                 tentative_g = g_score[current] + 1
                 
