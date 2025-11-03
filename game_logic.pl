@@ -22,6 +22,13 @@ init_game :-
     retractall(collision_box(_, _, _, _)),
     retractall(fall_zone(_, _, _, _)),
     retractall(water_zone(_, _, _, _)),
+    % Clear map system facts
+    retractall(map_size(_, _)),
+    retractall(tile_size(_, _)),
+    retractall(grid_cell(_, _, _)),
+    retractall(grid_size(_, _)),
+    retractall(safe_position(_, _)),
+    retractall(cached_path(_, _, _)),
     asserta(game_over(false)).
 
 % Check if a point is inside a rectangle
@@ -757,6 +764,86 @@ get_game_over_reason(Reason) :-
     ; State = game_over_timeout -> Reason = timeout
     ; State = victory -> Reason = victory
     ; Reason = none).
+
+% ============================================================================
+% PHASE 4: SPAWNING SYSTEM
+% ============================================================================
+% Entity spawning configuration and logic
+
+% Spawning configuration
+:- dynamic spawn_config/2.
+
+% Initialize spawn config (call at game start)
+init_spawn_config :-
+    retractall(spawn_config(_, _)),
+    assertz(spawn_config(wumpus_count, 3)),      % 3-4 Wumpus
+    assertz(spawn_config(wumpus_min_distance, 800)),
+    assertz(spawn_config(chest_count, 3)),        % 1 real + 2 mimics
+    assertz(spawn_config(arrow_pickup_count, 3)),
+    assertz(spawn_config(rock_pickup_count, 5)).
+
+% Get spawn configuration
+get_spawn_config(Key, Value) :-
+    spawn_config(Key, Value), !.
+get_spawn_config(wumpus_count, 3).  % Default fallback
+get_spawn_config(wumpus_min_distance, 800).
+get_spawn_config(chest_count, 3).
+get_spawn_config(arrow_pickup_count, 3).
+get_spawn_config(rock_pickup_count, 5).
+
+% Generate Wumpus spawn positions (far apart from each other)
+% Returns list of (X, Y) positions
+generate_wumpus_spawns(Count, MinDistance, Positions) :-
+    get_spawn_config(wumpus_count, MaxCount),
+    ActualCount is min(Count, MaxCount),
+    generate_wumpus_spawns_helper(ActualCount, MinDistance, [], Positions).
+
+generate_wumpus_spawns_helper(0, _, Acc, Acc) :- !.
+generate_wumpus_spawns_helper(N, MinDist, Acc, Result) :-
+    N > 0,
+    % Get safe position far from already spawned
+    get_safe_position_far_from_list(Acc, MinDist, X, Y),
+    N1 is N - 1,
+    generate_wumpus_spawns_helper(N1, MinDist, [(X, Y)|Acc], Result).
+
+% Helper: get safe position far from list of positions
+get_safe_position_far_from_list([], _, X, Y) :-
+    % No existing positions, just get any safe position
+    random_safe_position(X, Y), !.
+get_safe_position_far_from_list(ExistingPositions, MinDist, X, Y) :-
+    % Try multiple times to find position far from all existing
+    between(1, 100, _),
+    random_safe_position(X, Y),
+    \+ too_close_to_any(X, Y, ExistingPositions, MinDist),
+    !.
+
+% Check if position is too close to any in list
+too_close_to_any(X, Y, [(EX, EY)|_], MinDist) :-
+    DX is X - EX, DY is Y - EY,
+    DistSq is DX * DX + DY * DY,
+    MinDistSq is MinDist * MinDist,
+    DistSq < MinDistSq, !.
+too_close_to_any(X, Y, [_|Rest], MinDist) :-
+    too_close_to_any(X, Y, Rest, MinDist).
+
+% Generate pickup spawn positions (arrows/rocks)
+generate_pickup_spawns(Count, Positions) :-
+    generate_pickup_spawns_helper(Count, [], Positions).
+
+generate_pickup_spawns_helper(0, Acc, Acc) :- !.
+generate_pickup_spawns_helper(N, Acc, Result) :-
+    N > 0,
+    random_safe_position(X, Y),
+    % Ensure not near pits
+    \+ is_near_hazard(X, Y, 50),
+    N1 is N - 1,
+    generate_pickup_spawns_helper(N1, [(X, Y)|Acc], Result).
+
+% Check if position is near any hazard (pit/water)
+is_near_hazard(X, Y, Radius) :-
+    fall_zone(FX, FY, FW, FH),
+    X >= FX - Radius, X =< FX + FW + Radius,
+    Y >= FY - Radius, Y =< FY + FH + Radius, !.
 
 % ============================================================================
 % HELPER PREDICATES FOR GAME LOGIC

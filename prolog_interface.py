@@ -590,3 +590,69 @@ class PrologEngine:
                 return None
             return reason
         return None
+    
+    def init_spawn_config(self):
+        """Initialize spawning configuration in Prolog"""
+        query = "init_spawn_config"
+        self._query(query)
+    
+    def generate_wumpus_spawns(self, count, min_distance=800):
+        """Generate Wumpus spawn positions that are far apart"""
+        query = f"generate_wumpus_spawns({count}, {min_distance}, Positions)"
+        results = self._query(query)
+        if results and 'Positions' in results[0]:
+            try:
+                positions = results[0]['Positions']
+                spawn_list = []
+                
+                # Prolog returns list as [',(X,Y)', ',(X,Y)', ...]
+                # Need to parse each string
+                for pos_str in positions:
+                    if isinstance(pos_str, str):
+                        # Remove ',(' prefix and ')' suffix, then split
+                        pos_str = pos_str.strip()
+                        if pos_str.startswith(',(') and pos_str.endswith(')'):
+                            # Extract "(X, Y)" part
+                            coord_str = pos_str[1:]  # Remove leading ','
+                            # Use eval to parse tuple (safe since we control the format)
+                            pos = eval(coord_str)
+                            if isinstance(pos, tuple) and len(pos) == 2:
+                                spawn_list.append((int(pos[0]), int(pos[1])))
+                    elif isinstance(pos, tuple) and len(pos) == 2:
+                        # Already a tuple (shouldn't happen but handle it)
+                        spawn_list.append((int(pos[0]), int(pos[1])))
+                
+                print(f"[Prolog] Generated {len(spawn_list)} Wumpus spawn positions")
+                return spawn_list
+            except (KeyError, ValueError, TypeError, SyntaxError) as e:
+                print(f"[Prolog] Error parsing Wumpus spawns: {e}")
+                return []
+        return []
+    
+    def generate_pickup_spawns(self, count):
+        """Generate pickup spawn positions (arrows/rocks)"""
+        query = f"generate_pickup_spawns({count}, Positions)"
+        results = self._query(query)
+        if results and 'Positions' in results[0]:
+            try:
+                positions = results[0]['Positions']
+                spawn_list = []
+                
+                # Parse Prolog list format [',(X,Y)', ...]
+                for pos_str in positions:
+                    if isinstance(pos_str, str):
+                        pos_str = pos_str.strip()
+                        if pos_str.startswith(',(') and pos_str.endswith(')'):
+                            coord_str = pos_str[1:]
+                            pos = eval(coord_str)
+                            if isinstance(pos, tuple) and len(pos) == 2:
+                                spawn_list.append((int(pos[0]), int(pos[1])))
+                    elif isinstance(pos, tuple) and len(pos) == 2:
+                        spawn_list.append((int(pos[0]), int(pos[1])))
+                
+                print(f"[Prolog] Generated {len(spawn_list)} pickup spawn positions")
+                return spawn_list
+            except (KeyError, ValueError, TypeError, SyntaxError) as e:
+                print(f"[Prolog] Error parsing pickup spawns: {e}")
+                return []
+        return []

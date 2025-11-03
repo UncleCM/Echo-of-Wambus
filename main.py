@@ -47,9 +47,10 @@ class Game:
             self.prolog = PrologEngine()
             print("✓ Prolog engine initialized")
         
-        # Initialize Prolog game state (HP, inventory, time, etc.)
+        # Clear all Prolog facts (prevent duplicate collision boxes on restart)
         if self.prolog and self.prolog.available:
-            self.prolog.init_game_state()
+            self.prolog.init_game()  # Clear old facts
+            self.prolog.init_game_state()  # Reset game state
         
         # Legacy Python variables (for backward compatibility - will be removed later)
         self.has_treasure = False
@@ -90,6 +91,9 @@ class Game:
             
             # Generate safe positions cache (for spawning)
             self.prolog.generate_safe_positions(entity_width=32, entity_height=32)
+            
+            # Initialize spawn configuration (Phase 4)
+            self.prolog.init_spawn_config()
         
         # Map knowledge system (after setup to load tmx_map first)
         # MapKnowledge can now use Prolog as backend if needed
@@ -212,50 +216,36 @@ class Game:
         return (fallback_x, fallback_y)
     
     def spawn_wumpus_pack(self):
-        """Spawn 3-4 Wumpus enemies using Prolog safe positions"""
+        """Spawn 3-4 Wumpus enemies using Prolog"""
         import random
         
         wumpus_count = random.randint(3, 4)
-        spawned = 0
-        spawned_positions = []
-        min_distance = 800
         
-        # Use Prolog to find safe positions that are far apart
-        for i in range(wumpus_count):
-            if self.prolog and self.prolog.available:
-                # Try to get position far from others (Prolog method)
-                safe_pos = self.prolog.get_safe_position_far_from(
-                    spawned_positions,
-                    min_distance=min_distance
-                )
-                
-                # Fallback: random safe position if far position not found
-                if not safe_pos:
-                    safe_pos = self.prolog.get_random_safe_position()
-            else:
-                # Fallback: use MapKnowledge if Prolog unavailable
-                safe_pos = self.map_knowledge.get_safe_random_position()
-            
-            if safe_pos:
-                spawn_x, spawn_y = safe_pos
-                
-                # Spawn Wumpus
-                wumpus = Wumpus(
-                    (spawn_x, spawn_y),
-                    [self.all_sprites, self.wumpus_sprites],
-                    self.collision_sprites,
-                    self.prolog,
-                    self.map_knowledge,
-                    self.sound_manager
-                )
-                spawned_positions.append((spawn_x, spawn_y))
-                print(f"[Wumpus {spawned+1}/{wumpus_count}] Spawned at ({spawn_x:.0f}, {spawn_y:.0f})")
-                spawned += 1
-            else:
-                print(f"[Wumpus] Warning: Could not find safe position for Wumpus {spawned+1}/{wumpus_count}")
+        # Use Prolog to generate all spawn positions at once
+        if self.prolog and self.prolog.available:
+            positions = self.prolog.generate_wumpus_spawns(wumpus_count, min_distance=800)
+        else:
+            # Fallback
+            positions = []
+            for i in range(wumpus_count):
+                pos = self.map_knowledge.get_safe_random_position()
+                if pos:
+                    positions.append(pos)
         
-        if spawned < wumpus_count:
-            print(f"[Wumpus] Warning: Only spawned {spawned}/{wumpus_count} enemies")
+        # Spawn Wumpus at each position
+        for i, (spawn_x, spawn_y) in enumerate(positions):
+            wumpus = Wumpus(
+                (spawn_x, spawn_y),
+                [self.all_sprites, self.wumpus_sprites],
+                self.collision_sprites,
+                self.prolog,
+                self.map_knowledge,
+                self.sound_manager
+            )
+            print(f"[Wumpus {i+1}/{len(positions)}] Spawned at ({spawn_x:.0f}, {spawn_y:.0f})")
+        
+        if len(positions) < wumpus_count:
+            print(f"[Wumpus] Warning: Only spawned {len(positions)}/{wumpus_count} enemies")
 
     def spawn_treasure(self):
         """Spawn treasure chest system (1 real, 2 mimics) using Prolog"""
@@ -343,101 +333,46 @@ class Game:
             self.prolog.init_exit(int(entrance_pos[0]), int(entrance_pos[1]))
 
     def spawn_arrow_pickups(self):
-        """Spawn arrow pickups in map (3 locations, no respawn)"""
+        """Spawn arrow pickups using Prolog"""
         from sprites import ArrowPickup
-
-        pickup_count = 0
-
-        # Look for 'ArrowPickup' object layer in TMX
-        for layer in self.tmx_map.layers:
-            if (
-                type(layer).__name__ == "TiledObjectGroup"
-                and "arrow" in layer.name.lower()
-            ):
-                for obj in layer:
-                    if pickup_count >= ARROW_PICKUP_COUNT:
-                        break
-                    pickup_x = (obj.x * self.map_scale) + (
-                        obj.width * self.map_scale // 2
-                    )
-                    pickup_y = (obj.y * self.map_scale) + (
-                        obj.height * self.map_scale // 2
-                    )
-                    pickup = ArrowPickup(
-                        (pickup_x, pickup_y),
-                        [self.all_sprites, self.arrow_pickup_sprites],
-                        pickup_count  # Pass ID for Prolog tracking
-                    )
-                    pickup_count += 1
-                    
-                    # Add to Prolog
-                    if self.prolog and self.prolog.available:
-                        self.prolog.add_arrow_pickup(pickup_count, int(pickup_x), int(pickup_y))
-                    
-                    print(
-                        f"Spawned arrow pickup {pickup_count} at ({pickup_x}, {pickup_y})"
-                    )
-
-                if pickup_count >= ARROW_PICKUP_COUNT:
-                    return
-
-        # Fallback: use safe random positions from MapKnowledge
-        needed = ARROW_PICKUP_COUNT - pickup_count
-        attempts = 0
         
-        while pickup_count < ARROW_PICKUP_COUNT and attempts < 30:
-            safe_pos = self.map_knowledge.get_safe_random_position()
-            if safe_pos and not self.map_knowledge.is_near_pit(safe_pos[0], safe_pos[1], 50):
-                pickup_count += 1
-                pickup = ArrowPickup(safe_pos, [self.all_sprites, self.arrow_pickup_sprites], pickup_count)
-                
-                # Add to Prolog
-                if self.prolog and self.prolog.available:
-                    self.prolog.add_arrow_pickup(pickup_count, int(safe_pos[0]), int(safe_pos[1]))
-                
-                print(f"Arrow pickup {pickup_count} spawned safely at: {safe_pos}")
-            attempts += 1
+        # Use Prolog to generate spawn positions
+        if self.prolog and self.prolog.available:
+            positions = self.prolog.generate_pickup_spawns(ARROW_PICKUP_COUNT)
+        else:
+            # Fallback
+            positions = []
+            for i in range(ARROW_PICKUP_COUNT):
+                safe_pos = self.map_knowledge.get_safe_random_position()
+                if safe_pos and not self.map_knowledge.is_near_pit(safe_pos[0], safe_pos[1], 50):
+                    positions.append(safe_pos)
+        
+        # Spawn arrows at each position
+        for i, (x, y) in enumerate(positions):
+            pickup = ArrowPickup((x, y), [self.all_sprites, self.arrow_pickup_sprites], i+1)
+            if self.prolog and self.prolog.available:
+                self.prolog.add_arrow_pickup(i+1, int(x), int(y))
+            print(f"Arrow pickup {i+1} spawned at: ({x:.0f}, {y:.0f})")
     
     def spawn_rock_pickups(self):
-        """Spawn rock pickups on the map from TMX 'rock' layer"""
-        pickup_count = 0
+        """Spawn rock pickups using Prolog"""
+        # Use Prolog to generate spawn positions
+        if self.prolog and self.prolog.available:
+            positions = self.prolog.generate_pickup_spawns(ROCK_PICKUP_COUNT)
+        else:
+            # Fallback
+            positions = []
+            for i in range(ROCK_PICKUP_COUNT):
+                safe_pos = self.map_knowledge.get_safe_random_position()
+                if safe_pos and not self.map_knowledge.is_near_pit(safe_pos[0], safe_pos[1], 50):
+                    positions.append(safe_pos)
         
-        # Try to load from TMX 'rock' object layer
-        for layer in self.tmx_map.layers:
-            if hasattr(layer, 'name') and layer.name == 'rock':
-                if len(layer) > 0:
-                    for obj in layer:
-                        # Scale position
-                        pos = (
-                            obj.x * self.map_scale,
-                            obj.y * self.map_scale
-                        )
-                        pickup_count += 1
-                        pickup = RockPickup(pos, [self.all_sprites, self.rock_pickup_sprites], pickup_count)
-                        
-                        # Add to Prolog
-                        if self.prolog and self.prolog.available:
-                            self.prolog.add_rock_pickup(pickup_count, int(pos[0]), int(pos[1]))
-                        
-                        print(f"Rock pickup {pickup_count} at: {pos}")
-                    return
-        
-        # Fallback: use safe random positions from MapKnowledge
-        print("No 'rock' layer found, using safe random positions")
-        attempts = 0
-        
-        while pickup_count < ROCK_PICKUP_COUNT and attempts < 30:
-            safe_pos = self.map_knowledge.get_safe_random_position()
-            if safe_pos and not self.map_knowledge.is_near_pit(safe_pos[0], safe_pos[1], 50):
-                pickup_count += 1
-                pickup = RockPickup(safe_pos, [self.all_sprites, self.rock_pickup_sprites], pickup_count)
-                
-                # Add to Prolog
-                if self.prolog and self.prolog.available:
-                    self.prolog.add_rock_pickup(pickup_count, int(safe_pos[0]), int(safe_pos[1]))
-                
-                print(f"Rock pickup {pickup_count} spawned safely at: {safe_pos}")
-            attempts += 1
+        # Spawn rocks at each position
+        for i, (x, y) in enumerate(positions):
+            pickup = RockPickup((x, y), [self.all_sprites, self.rock_pickup_sprites], i+1)
+            if self.prolog and self.prolog.available:
+                self.prolog.add_rock_pickup(i+1, int(x), int(y))
+            print(f"Rock pickup {i+1} spawned at: ({x:.0f}, {y:.0f})")
 
     def setup(self):
         self.tmx_map = load_pygame(join("assets", "Map", "test_wall_size.tmx"))

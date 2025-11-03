@@ -1,0 +1,71 @@
+
+    # ========================================================================
+    # PHASE 4: SPAWNING SYSTEM
+    # ========================================================================
+    
+    def init_spawn_config(self):
+        """Initialize spawning configuration in Prolog"""
+        query = "init_spawn_config"
+        self._query(query)
+    
+    def get_spawn_config(self, key):
+        """
+        Get spawn configuration value
+        Args:
+            key: 'wumpus_count', 'wumpus_min_distance', 'chest_count', etc.
+        Returns: Configuration value
+        """
+        query = f"get_spawn_config({key}, Value)"
+        results = self._query(query)
+        if results:
+            try:
+                return int(results[0]['Value'])
+            except (KeyError, ValueError, TypeError):
+                return 0
+        return 0
+    
+    def generate_wumpus_spawns(self, count, min_distance=800):
+        """
+        Generate Wumpus spawn positions that are far apart
+        Args:
+            count: Number of Wumpus to spawn
+            min_distance: Minimum distance between Wumpus
+        Returns: List of (x, y) tuples
+        """
+        query = f"generate_wumpus_spawns({count}, {min_distance}, Positions)"
+        results = self._query(query)
+        if results and 'Positions' in results[0]:
+            try:
+                positions = results[0]['Positions']
+                # Convert Prolog list format to Python tuples
+                spawn_list = []
+                for pos in positions:
+                    if isinstance(pos, tuple) and len(pos) == 2:
+                        spawn_list.append((int(pos[0]), int(pos[1])))
+                return spawn_list
+            except (KeyError, ValueError, TypeError) as e:
+                print(f"[Prolog] Error parsing Wumpus spawns: {e}")
+                return []
+        return []
+    
+    def generate_pickup_spawns(self, count):
+        """
+        Generate pickup spawn positions (arrows/rocks)
+        Args:
+            count: Number of pickups to spawn
+        Returns: List of (x, y) tuples
+        """
+        query = f"generate_pickup_spawns({count}, Positions)"
+        results = self._query(query)
+        if results and 'Positions' in results[0]:
+            try:
+                positions = results[0]['Positions']
+                spawn_list = []
+                for pos in positions:
+                    if isinstance(pos, tuple) and len(pos) == 2:
+                        spawn_list.append((int(pos[0]), int(pos[1])))
+                return spawn_list
+            except (KeyError, ValueError, TypeError) as e:
+                print(f"[Prolog] Error parsing pickup spawns: {e}")
+                return []
+        return []
