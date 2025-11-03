@@ -677,7 +677,7 @@ class Game:
                         print(f"[Pickup] Collected arrow! Total: {self.player.arrows}/{self.player.max_arrows}")
     
     def handle_rock_throw(self):
-        """Handle player throwing rock (E key pressed - keyboard only)"""
+        """Handle player throwing rock (Q key pressed - keyboard only)"""
         if not self.player.is_alive or self.player.rocks <= 0:
             return
         
@@ -863,8 +863,8 @@ class Game:
                             print(f"Debug mode: {self.debug_mode}")
                         elif event.key == pygame.K_SPACE:
                             self.handle_arrow_shooting()
-                        elif event.key == pygame.K_e:
-                            # Rock throwing (E key)
+                        elif event.key == pygame.K_q:
+                            # Rock throwing (Q key)
                             self.handle_rock_throw()
 
                     # Game over / Victory screens
