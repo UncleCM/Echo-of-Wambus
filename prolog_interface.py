@@ -9,10 +9,17 @@ class PrologEngine:
         
         try:
             self.prolog = Prolog()
-            self.prolog.consult("game_logic.pl")
+            
+            # Choose between modular or monolithic Prolog
+            if USE_MODULAR_PROLOG:
+                self.prolog.consult("game_logic_modular.pl")
+                print("[PrologEngine] Initialized with MODULAR architecture (Phase 1)")
+            else:
+                self.prolog.consult("game_logic.pl")
+                print("[PrologEngine] Initialized with MONOLITHIC architecture (legacy)")
+            
             self.available = True
             self.init_game()
-            print("[PrologEngine] Initialized successfully")
         except Exception as e:
             print(f"[PrologEngine] Failed to initialize: {e}")
             print("[PrologEngine] Running with fallback collision system")

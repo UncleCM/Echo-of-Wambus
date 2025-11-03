@@ -11,13 +11,21 @@ Used by:
 - sprites.py: Arrow/rock physics
 - And ~15+ other files
 
-Last updated: 2025-11-03 (Phase 2 - Wumpus AI complete)
+Last updated: 2025-11-03 (Phase 1 - Modular Prolog)
 ===============================================================================
 """
 
 import pygame 
 from os.path import join 
 from os import walk
+
+# =============================================================================
+# PROLOG SETTINGS
+# =============================================================================
+
+# Set to True to use new modular Prolog architecture (Phase 1 complete)
+# Set to False to use original monolithic game_logic.pl
+USE_MODULAR_PROLOG = True  # Toggle this to test!
 
 # =============================================================================
 # DISPLAY SETTINGS
