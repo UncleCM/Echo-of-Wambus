@@ -213,6 +213,183 @@ class PrologEngine:
     # COMBAT SYSTEM
     # =========================================================================
     
+    # PROJECTILE TRACKING
+    # -------------------------------------------------------------------------
+    
+    def init_projectile_system(self):
+        """Initialize projectile tracking system"""
+        query = "init_projectile_system"
+        self._query(query)
+        print("[PrologEngine] Projectile tracking system initialized")
+    
+    def spawn_arrow(self, x, y, dir_x, dir_y):
+        """
+        Register new arrow projectile in Prolog
+        Returns: Arrow ID
+        """
+        query = f"spawn_arrow({x}, {y}, {dir_x}, {dir_y}, ArrowID)"
+        results = self._query(query)
+        if results:
+            try:
+                arrow_id = results[0]['ArrowID']
+                print(f"[PrologEngine] Spawned arrow ID {arrow_id} at ({x}, {y})")
+                return arrow_id
+            except (KeyError, IndexError):
+                return None
+        return None
+    
+    def update_arrow_position(self, arrow_id, new_x, new_y):
+        """Update arrow position in Prolog"""
+        query = f"update_arrow_position({arrow_id}, {new_x}, {new_y})"
+        self._query(query)
+    
+    def remove_arrow(self, arrow_id):
+        """Remove arrow from tracking (hit or expired)"""
+        query = f"remove_arrow({arrow_id})"
+        self._query(query)
+        print(f"[PrologEngine] Removed arrow ID {arrow_id}")
+    
+    def get_active_arrows(self):
+        """
+        Get all active arrows
+        Returns: List of tuples (ID, X, Y, (DirX, DirY))
+        """
+        query = "get_active_arrows(Arrows)"
+        results = self._query(query)
+        if results:
+            try:
+                arrows_str = results[0]['Arrows']
+                # Parse Prolog list format
+                if isinstance(arrows_str, str):
+                    arrows = eval(arrows_str)
+                else:
+                    arrows = arrows_str
+                return arrows
+            except (KeyError, IndexError, SyntaxError):
+                return []
+        return []
+    
+    def count_active_arrows(self):
+        """
+        Count active arrows
+        Returns: Integer count
+        """
+        query = "count_active_arrows(Count)"
+        results = self._query(query)
+        if results:
+            try:
+                return results[0]['Count']
+            except (KeyError, IndexError):
+                return 0
+        return 0
+    
+    def spawn_rock(self, x, y, vel_x, vel_y):
+        """
+        Register new rock projectile in Prolog
+        Returns: Rock ID
+        """
+        query = f"spawn_rock({x}, {y}, {vel_x}, {vel_y}, RockID)"
+        results = self._query(query)
+        if results:
+            try:
+                rock_id = results[0]['RockID']
+                print(f"[PrologEngine] Spawned rock ID {rock_id} at ({x}, {y})")
+                return rock_id
+            except (KeyError, IndexError):
+                return None
+        return None
+    
+    def update_rock(self, rock_id, new_x, new_y, new_vel_x, new_vel_y):
+        """Update rock position and velocity in Prolog"""
+        query = f"update_rock({rock_id}, {new_x}, {new_y}, {new_vel_x}, {new_vel_y})"
+        self._query(query)
+    
+    def remove_rock(self, rock_id):
+        """Remove rock from tracking (expired or stopped)"""
+        query = f"remove_rock({rock_id})"
+        self._query(query)
+        print(f"[PrologEngine] Removed rock ID {rock_id}")
+    
+    def get_active_rocks(self):
+        """
+        Get all active rocks
+        Returns: List of tuples (ID, X, Y, VelX, VelY)
+        """
+        query = "get_active_rocks(Rocks)"
+        results = self._query(query)
+        if results:
+            try:
+                rocks_str = results[0]['Rocks']
+                # Parse Prolog list format
+                if isinstance(rocks_str, str):
+                    rocks = eval(rocks_str)
+                else:
+                    rocks = rocks_str
+                return rocks
+            except (KeyError, IndexError, SyntaxError):
+                return []
+        return []
+    
+    def count_active_rocks(self):
+        """
+        Count active rocks
+        Returns: Integer count
+        """
+        query = "count_active_rocks(Count)"
+        results = self._query(query)
+        if results:
+            try:
+                return results[0]['Count']
+            except (KeyError, IndexError):
+                return 0
+        return 0
+    
+    def arrow_near_position(self, x, y, radius):
+        """
+        Check if any arrow is near a position (for Wumpus awareness)
+        Returns: True if arrow nearby, False otherwise
+        """
+        query = f"arrow_near_position({x}, {y}, {radius})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def rock_near_position(self, x, y, radius):
+        """
+        Check if any rock is near a position (for sound detection)
+        Returns: True if rock nearby, False otherwise
+        """
+        query = f"rock_near_position({x}, {y}, {radius})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def nearest_arrow_to_position(self, x, y):
+        """
+        Get nearest arrow to a position
+        Returns: Tuple (arrow_id, distance) or None
+        """
+        query = f"nearest_arrow_to_position({x}, {y}, ArrowID, Distance)"
+        results = self._query(query)
+        if results:
+            try:
+                arrow_id = results[0]['ArrowID']
+                distance = results[0]['Distance']
+                return (arrow_id, distance)
+            except (KeyError, IndexError):
+                return None
+        return None
+    
+    def arrow_hits_wumpus(self, arrow_id, wumpus_x, wumpus_y, hit_radius=60):
+        """
+        Check if specific arrow hits Wumpus position
+        Returns: True if hit, False otherwise
+        """
+        query = f"arrow_hits_wumpus({arrow_id}, {wumpus_x}, {wumpus_y}, {hit_radius})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    # COLLISION DETECTION
+    # -------------------------------------------------------------------------
+    
     def arrow_hit_wumpus(self, arrow_x, arrow_y, wumpus_x, wumpus_y, hit_radius=60):
         """
         Check if arrow hits Wumpus

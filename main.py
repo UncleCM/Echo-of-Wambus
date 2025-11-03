@@ -587,6 +587,7 @@ class Game:
                 arrow_direction,
                 [self.all_sprites, self.arrow_sprites],
                 self.collision_sprites,
+                self.prolog  # Pass Prolog reference for tracking
             )
             # Play arrow shooting sound
             self.sound_manager.play_sound("button")  # Using button sound for arrow shoot
@@ -686,7 +687,8 @@ class Game:
                 rock_direction,
                 ROCK_THROW_POWER,
                 [self.all_sprites, self.rock_sprites],
-                self.collision_sprites
+                self.collision_sprites,
+                self.prolog  # Pass Prolog reference for tracking
             )
             print(f"[Rock] Threw rock in direction: {rock_direction}")
     
@@ -1184,8 +1186,16 @@ class Game:
                 self.screen.blit(debug_text, (10, 10))
 
                 coll_count, fall_count = self.prolog.count_hazards()
+                
+                # Get projectile counts from Prolog
+                arrow_count = 0
+                rock_count = 0
+                if self.prolog and self.prolog.available:
+                    arrow_count = self.prolog.count_active_arrows()
+                    rock_count = self.prolog.count_active_rocks()
+                
                 debug_text2 = font.render(
-                    f"Prolog: Coll={coll_count} Falls={fall_count} | Press F",
+                    f"Prolog: Coll={coll_count} Falls={fall_count} | Arrows={arrow_count} Rocks={rock_count}",
                     True,
                     (255, 255, 255),
                 )

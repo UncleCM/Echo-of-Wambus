@@ -273,7 +273,7 @@ class ExitPortal(pygame.sprite.Sprite):
 
 class Arrow(pygame.sprite.Sprite):
     """Arrow projectile shot by player"""
-    def __init__(self, pos, direction, groups, collision_sprites):
+    def __init__(self, pos, direction, groups, collision_sprites, prolog=None):
         super().__init__(groups)
         
         from Settings import ARROW_SPEED, ARROW_MAX_DISTANCE
@@ -284,6 +284,7 @@ class Arrow(pygame.sprite.Sprite):
         self.max_distance = ARROW_MAX_DISTANCE
         self.distance_traveled = 0
         self.collision_sprites = collision_sprites
+        self.prolog = prolog
         
         # Create arrow visual (8x32 pixels - thin and long)
         arrow_length = 32
@@ -303,6 +304,16 @@ class Arrow(pygame.sprite.Sprite):
         self.rect = self.image.get_rect(center=self.pos)
         # Use full rect for better hit detection (no shrinking)
         self.hitbox_rect = self.rect.copy()
+        
+        # Register with Prolog
+        self.arrow_id = None
+        if self.prolog and self.prolog.available:
+            self.arrow_id = self.prolog.spawn_arrow(
+                int(self.pos.x), 
+                int(self.pos.y),
+                float(self.direction.x),
+                float(self.direction.y)
+            )
     
     def update(self, dt):
         """Move arrow and check for destruction"""
@@ -311,6 +322,14 @@ class Arrow(pygame.sprite.Sprite):
         self.pos += movement
         self.rect.center = self.pos
         self.hitbox_rect.center = self.pos
+        
+        # Update Prolog position
+        if self.prolog and self.prolog.available and self.arrow_id is not None:
+            self.prolog.update_arrow_position(
+                self.arrow_id,
+                int(self.pos.x),
+                int(self.pos.y)
+            )
         
         # Track distance
         self.distance_traveled += self.speed
@@ -331,6 +350,12 @@ class Arrow(pygame.sprite.Sprite):
             if hasattr(sprite, 'rect') and self.hitbox_rect.colliderect(sprite.rect):
                 return True
         return False
+    
+    def kill(self):
+        """Override kill to unregister from Prolog"""
+        if self.prolog and self.prolog.available and self.arrow_id is not None:
+            self.prolog.remove_arrow(self.arrow_id)
+        super().kill()
 
 class ArrowPickup(pygame.sprite.Sprite):
     """Arrow pickup collectible - gives +1 arrow"""
@@ -379,7 +404,7 @@ class ArrowPickup(pygame.sprite.Sprite):
 
 class Rock(pygame.sprite.Sprite):
     """Throwable rock projectile with physics"""
-    def __init__(self, pos, direction, throw_power, groups, collision_sprites):
+    def __init__(self, pos, direction, throw_power, groups, collision_sprites, prolog=None):
         super().__init__(groups)
         
         from Settings import ROCK_GRAVITY, ROCK_BOUNCE_DAMPING, ROCK_ROLLING_FRICTION, SOUND_LEVELS, SOUND_DURATIONS
@@ -390,6 +415,7 @@ class Rock(pygame.sprite.Sprite):
         self.gravity = ROCK_GRAVITY
         self.bounce_damping = ROCK_BOUNCE_DAMPING
         self.rolling_friction = ROCK_ROLLING_FRICTION
+        self.prolog = prolog
         
         # Visual
         size = 12
@@ -408,6 +434,16 @@ class Rock(pygame.sprite.Sprite):
         # Store sound manager reference (will be passed in update)
         self.lifetime = 0
         self.max_lifetime = 10.0  # Auto-remove after 10 seconds
+        
+        # Register with Prolog
+        self.rock_id = None
+        if self.prolog and self.prolog.available:
+            self.rock_id = self.prolog.spawn_rock(
+                int(self.pos.x),
+                int(self.pos.y),
+                float(self.velocity.x),
+                float(self.velocity.y)
+            )
     
     def update(self, dt, sound_manager=None):
         """Update rock physics"""
@@ -425,6 +461,16 @@ class Rock(pygame.sprite.Sprite):
         self.pos += self.velocity
         self.rect.center = self.pos
         self.hitbox_rect.center = self.pos
+        
+        # Update Prolog position and velocity
+        if self.prolog and self.prolog.available and self.rock_id is not None:
+            self.prolog.update_rock(
+                self.rock_id,
+                int(self.pos.x),
+                int(self.pos.y),
+                float(self.velocity.x),
+                float(self.velocity.y)
+            )
         
         # Check wall collision
         if self._check_wall_collision():
@@ -481,6 +527,12 @@ class Rock(pygame.sprite.Sprite):
                 return True
         
         return False
+    
+    def kill(self):
+        """Override kill to unregister from Prolog"""
+        if self.prolog and self.prolog.available and self.rock_id is not None:
+            self.prolog.remove_rock(self.rock_id)
+        super().kill()
 
 
 class RockPickup(pygame.sprite.Sprite):
