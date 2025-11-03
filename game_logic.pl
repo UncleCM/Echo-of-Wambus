@@ -798,7 +798,8 @@ random_wumpus_safe_position(X, Y) :-
     % Wumpus is now 32x32 (same as player)
     WumpusW = 32,
     WumpusH = 32,
-    % Calculate valid range (avoid spawning partially off-map)
+    % CRITICAL: Only spawn within playable area (not entrance/exit zones)
+    % Calculate valid range (avoid spawning partially off-map or in entrance area)
     MaxX is MapWidth - WumpusW,
     MaxY is MapHeight - WumpusH,
     % Try random positions until finding a safe one
@@ -807,6 +808,9 @@ random_wumpus_safe_position(X, Y) :-
     random(0, MaxY, RandY),
     X is RandX,
     Y is RandY,
+    % Ensure within playable bounds (entrance can be at X > MapWidth!)
+    X >= 0, X =< MaxX,
+    Y >= 0, Y =< MaxY,
     % Check if this position is safe for Wumpus
     is_safe_for_entity(wumpus, X, Y, 0),
     % Also avoid pits
@@ -814,10 +818,18 @@ random_wumpus_safe_position(X, Y) :-
     !.
 
 % Fallback: if no random position found, use cached safe positions
-% and find one that works for Wumpus
+% and find one that works for Wumpus within playable bounds
 random_wumpus_safe_position(X, Y) :-
+    map_dimensions(MapWidth, MapHeight, _),
+    WumpusW = 32,
+    WumpusH = 32,
+    MaxX is MapWidth - WumpusW,
+    MaxY is MapHeight - WumpusH,
     findall([PX, PY], safe_position(PX, PY), Positions),
     member([X, Y], Positions),
+    % CRITICAL: Filter out entrance/exit positions
+    X >= 0, X =< MaxX,
+    Y >= 0, Y =< MaxY,
     is_safe_for_entity(wumpus, X, Y, 0),
     \+ is_near_pit(X, Y, 60),
     !.
@@ -896,29 +908,137 @@ generate_wumpus_patrol_route(WumpusID, Count, Waypoints) :-
     % Get Wumpus size (now 32x32, same as player)
     get_entity_size(wumpus, Width, Height),
     
-    % Get all safe positions for Wumpus size (with minimum spacing)
+    % Get map dimensions for better distribution
+    map_dimensions(MapWidth, MapHeight, _),
+    
+    % CRITICAL: Filter out positions outside playable area (e.g., entrance at X=1616)
+    % Only use positions within the logical map bounds
+    PlayableMaxX is MapWidth - Width,
+    PlayableMaxY is MapHeight - Height,
+    
+    % Get all safe positions for Wumpus size with wider spacing for better coverage
     findall((X, Y),
             (safe_position(X, Y),
+             X >= 0, X =< PlayableMaxX,  % Within playable X bounds
+             Y >= 0, Y =< PlayableMaxY,  % Within playable Y bounds
              is_safe_for_entity(X, Y, Width, Height),
-             \+ too_close(X, Y, CurrentX, CurrentY, 150)),  % At least 150px from spawn
+             \+ too_close(X, Y, CurrentX, CurrentY, 200)),  % Increased from 150px to 200px
             SafePositions),
     
-    % Build connected patrol route (each waypoint reachable from previous)
+    % Build connected patrol route with diversity preference
     (   SafePositions \= [] ->
-        build_connected_route(CurrentX, CurrentY, SafePositions, Count, [], TempWaypoints),
+        build_connected_route_diverse(CurrentX, CurrentY, SafePositions, Count, MapWidth, MapHeight, [], TempWaypoints),
         % Return at least 1 waypoint even if Count not reached
         (   TempWaypoints \= [] ->
             Waypoints = TempWaypoints
         ;
-            % Fallback: return first N random positions
-            take_n_random(SafePositions, Count, Waypoints)
+            % Fallback: return first N random positions with spacing
+            take_n_random_spaced(SafePositions, Count, 400, Waypoints)
         )
     ;
         % No safe positions at all
         Waypoints = []
     ).
 
-% Build a route where each waypoint is reachable from the previous one
+% Build diverse route - prefer waypoints in different map quadrants for better coverage
+build_connected_route_diverse(_, _, _, 0, _, _, Acc, Result) :-
+    reverse(Acc, Result), !.
+
+build_connected_route_diverse(_, _, [], _, _, _, Acc, Result) :-
+    % No more candidates, return what we have
+    reverse(Acc, Result), !.
+
+build_connected_route_diverse(FromX, FromY, CandidatePositions, Remaining, MapWidth, MapHeight, Acc, Result) :-
+    Remaining > 0,
+    
+    % Find positions with good spacing (400px minimum)
+    exclude_nearby_positions(CandidatePositions, Acc, 400, FilteredPositions),
+    
+    (   FilteredPositions \= [] ->
+        % Prefer positions in different quadrants for better map coverage
+        (   length(Acc, AccLen), AccLen < 2 ->
+            % First 2 waypoints: prefer far positions for wide coverage
+            find_farthest_position(FromX, FromY, FilteredPositions, 300, 800, NextX, NextY)
+        ;
+            % Later waypoints: also consider quadrant diversity
+            find_diverse_position(FromX, FromY, FilteredPositions, Acc, MapWidth, MapHeight, NextX, NextY)
+        ),
+        
+        % Add to route
+        NewRemaining is Remaining - 1,
+        build_connected_route_diverse(NextX, NextY, CandidatePositions, NewRemaining, MapWidth, MapHeight, [(NextX, NextY)|Acc], Result)
+    ;
+        % No more valid positions, return what we have
+        reverse(Acc, Result)
+    ).
+
+% Find position within preferred distance range
+find_farthest_position(FromX, FromY, Candidates, MinDist, MaxDist, BestX, BestY) :-
+    % Filter by distance range
+    findall((X, Y, Dist),
+            (member((X, Y), Candidates),
+             Dist is sqrt((X - FromX)**2 + (Y - FromY)**2),
+             Dist >= MinDist,
+             Dist =< MaxDist),
+            ValidCandidates),
+    
+    (   ValidCandidates \= [] ->
+        % Pick random from valid candidates
+        random_member((BestX, BestY, _), ValidCandidates)
+    ;
+        % Fallback: any candidate
+        random_member((BestX, BestY), Candidates)
+    ).
+
+% Find position that adds diversity to existing waypoints
+find_diverse_position(FromX, FromY, Candidates, ExistingWaypoints, MapWidth, MapHeight, BestX, BestY) :-
+    % Calculate which quadrants we've visited
+    % Prefer positions in less-visited quadrants for better map coverage
+    findall((X, Y, Score),
+            (member((X, Y), Candidates),
+             Dist is sqrt((X - FromX)**2 + (Y - FromY)**2),
+             Dist >= 300,
+             Dist =< 800,
+             calculate_diversity_score(X, Y, ExistingWaypoints, MapWidth, MapHeight, Score)),
+            ScoredCandidates),
+    
+    (   ScoredCandidates \= [] ->
+        % Sort by score (higher = more diverse) and pick from top candidates
+        % Use predsort for custom sorting by 3rd element (score) in descending order
+        predsort(compare_by_score, ScoredCandidates, SortedCandidates),
+        SortedCandidates = [(BestX, BestY, _)|_]
+    ;
+        % Fallback to farthest position
+        find_farthest_position(FromX, FromY, Candidates, 300, 800, BestX, BestY)
+    ).
+
+% Compare tuples by score (3rd element) in descending order
+compare_by_score(Order, (_, _, Score1), (_, _, Score2)) :-
+    (   Score1 > Score2 -> Order = (<)
+    ;   Score1 < Score2 -> Order = (>)
+    ;   Order = (=)
+    ).
+
+% Calculate diversity score (higher = better coverage)
+calculate_diversity_score(X, Y, ExistingWaypoints, MapWidth, MapHeight, Score) :-
+    % Get quadrant of this position
+    QuadX is floor(X / (MapWidth / 2)),
+    QuadY is floor(Y / (MapHeight / 2)),
+    
+    % Count how many waypoints are in same quadrant
+    findall(1,
+            (member((WX, WY), ExistingWaypoints),
+             QX is floor(WX / (MapWidth / 2)),
+             QY is floor(WY / (MapHeight / 2)),
+             QX =:= QuadX,
+             QY =:= QuadY),
+            SameQuadrant),
+    length(SameQuadrant, SameCount),
+    
+    % Score: fewer in same quadrant = higher score
+    Score is 10 - SameCount.
+
+% Build a route where each waypoint is reachable from the previous one (legacy version)
 build_connected_route(_, _, _, 0, Acc, Result) :-
     reverse(Acc, Result), !.
 
@@ -929,23 +1049,29 @@ build_connected_route(_, _, [], _, Acc, Result) :-
 build_connected_route(FromX, FromY, CandidatePositions, Remaining, Acc, Result) :-
     Remaining > 0,
     
-    % Find positions not too close to already selected waypoints (min 250px spacing)
-    exclude_nearby_positions(CandidatePositions, Acc, 250, FilteredPositions),
+    % Find positions not too close to already selected waypoints
+    % Use larger spacing for better map coverage (400px instead of 250px)
+    exclude_nearby_positions(CandidatePositions, Acc, 400, FilteredPositions),
     
     % Pick a random position from filtered list
     (   FilteredPositions \= [] ->
         random_member((NextX, NextY), FilteredPositions),
         
-        % Check if it's reasonably reachable (relaxed distance check for 32x32 Wumpus)
+        % Check if it's reasonably reachable (distance check for 32x32 Wumpus)
         Distance is sqrt((NextX - FromX)**2 + (NextY - FromY)**2),
-        (   Distance < 1000 ->  % Max jump distance between waypoints (increased for larger maps)
-            % Add to route and continue
+        % Prefer waypoints that are medium-far: 300-800px range for better map coverage
+        (   (Distance >= 300, Distance =< 800) ->
+            % Good distance - add to route
             NewRemaining is Remaining - 1,
             build_connected_route(NextX, NextY, CandidatePositions, NewRemaining, [(NextX, NextY)|Acc], Result)
-        ;
-            % Too far, try another candidate
+        ;   Distance < 300 ->
+            % Too close - try another candidate
             select((NextX, NextY), CandidatePositions, RemainingCandidates),
             build_connected_route(FromX, FromY, RemainingCandidates, Remaining, Acc, Result)
+        ;
+            % Too far (>800px) - still acceptable as fallback if needed
+            NewRemaining is Remaining - 1,
+            build_connected_route(NextX, NextY, CandidatePositions, NewRemaining, [(NextX, NextY)|Acc], Result)
         )
     ;
         % No more valid positions, return what we have
@@ -989,6 +1115,18 @@ random_select_n(List, N, [Selected|Rest]) :-
 
 % Alias for consistency
 take_n_random(List, N, Result) :- random_select_n(List, N, Result).
+
+% Take N random positions with minimum spacing
+take_n_random_spaced(_, 0, _, []) :- !.
+take_n_random_spaced([], _, _, []) :- !.
+take_n_random_spaced(Positions, N, MinSpacing, Result) :-
+    N > 0,
+    random_member(Pos, Positions),
+    N1 is N - 1,
+    % Filter out positions too close to selected one
+    exclude_nearby_positions(Positions, [Pos], MinSpacing, Remaining),
+    take_n_random_spaced(Remaining, N1, MinSpacing, RestResult),
+    Result = [Pos|RestResult].
 
 % ============================================================================
 % GAME STATE MANAGEMENT SYSTEM
