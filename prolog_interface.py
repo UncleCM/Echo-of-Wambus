@@ -833,3 +833,220 @@ class PrologEngine:
                 print(f"[Prolog] Error parsing pickup spawns: {e}")
                 return []
         return []
+
+    # =========================================================================
+    # WUMPUS AI SYSTEM
+    # =========================================================================
+    
+    def init_wumpus_ai(self, wumpus_id, base_hearing):
+        """Initialize Wumpus AI state"""
+        query = f"init_wumpus_ai({wumpus_id}, {base_hearing})"
+        self._query(query)
+        print(f"[PrologEngine] Initialized Wumpus AI {wumpus_id} with hearing={base_hearing}")
+    
+    def get_wumpus_state(self, wumpus_id):
+        """Get Wumpus AI state"""
+        query = f"get_wumpus_state({wumpus_id}, State)"
+        results = self._query(query)
+        if results:
+            try:
+                return results[0]['State']
+            except (KeyError, IndexError):
+                return 'roaming'
+        return 'roaming'
+    
+    def set_wumpus_state(self, wumpus_id, state):
+        """Set Wumpus AI state"""
+        query = f"set_wumpus_state({wumpus_id}, {state})"
+        self._query(query)
+    
+    def get_wumpus_target(self, wumpus_id):
+        """
+        Get Wumpus target position
+        Returns: (x, y) tuple or None
+        """
+        query = f"get_wumpus_target({wumpus_id}, X, Y)"
+        results = self._query(query)
+        if results:
+            try:
+                return (results[0]['X'], results[0]['Y'])
+            except (KeyError, IndexError):
+                return None
+        return None
+    
+    def set_wumpus_target(self, wumpus_id, x, y):
+        """Set Wumpus target position"""
+        query = f"set_wumpus_target({wumpus_id}, {x}, {y})"
+        self._query(query)
+    
+    def get_patrol_index(self, wumpus_id):
+        """Get current patrol waypoint index"""
+        query = f"get_patrol_index({wumpus_id}, Index)"
+        results = self._query(query)
+        if results:
+            try:
+                return results[0]['Index']
+            except (KeyError, IndexError):
+                return 0
+        return 0
+    
+    def set_patrol_index(self, wumpus_id, index):
+        """Set patrol waypoint index"""
+        query = f"set_patrol_index({wumpus_id}, {index})"
+        self._query(query)
+    
+    def increment_patrol_index(self, wumpus_id, max_waypoints):
+        """Increment patrol index with wrap-around"""
+        query = f"increment_patrol_index({wumpus_id}, {max_waypoints})"
+        self._query(query)
+    
+    def get_search_timer(self, wumpus_id):
+        """Get search timer value"""
+        query = f"get_search_timer({wumpus_id}, Time)"
+        results = self._query(query)
+        if results:
+            try:
+                return float(results[0]['Time'])
+            except (KeyError, IndexError, ValueError):
+                return 0.0
+        return 0.0
+    
+    def set_search_timer(self, wumpus_id, time):
+        """Set search timer value"""
+        query = f"set_search_timer({wumpus_id}, {time})"
+        self._query(query)
+    
+    def update_search_timer(self, wumpus_id, dt):
+        """Update (decrease) search timer by dt"""
+        query = f"update_search_timer({wumpus_id}, {dt})"
+        self._query(query)
+    
+    def get_hearing_radius(self, wumpus_id):
+        """Get current hearing radius"""
+        query = f"get_hearing_radius({wumpus_id}, Radius)"
+        results = self._query(query)
+        if results:
+            try:
+                return float(results[0]['Radius'])
+            except (KeyError, IndexError, ValueError):
+                return 350.0
+        return 350.0
+    
+    def set_hearing_radius(self, wumpus_id, radius):
+        """Set hearing radius"""
+        query = f"set_hearing_radius({wumpus_id}, {radius})"
+        self._query(query)
+    
+    def is_roaring(self, wumpus_id):
+        """Check if Wumpus is roaring"""
+        query = f"is_roaring({wumpus_id})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def set_roaring(self, wumpus_id, is_roaring):
+        """Set roaring state"""
+        roar_str = 'true' if is_roaring else 'false'
+        query = f"set_roaring({wumpus_id}, {roar_str})"
+        self._query(query)
+    
+    def get_last_roar_time(self, wumpus_id):
+        """Get last roar timestamp"""
+        query = f"get_last_roar_time({wumpus_id}, Time)"
+        results = self._query(query)
+        if results:
+            try:
+                return float(results[0]['Time'])
+            except (KeyError, IndexError, ValueError):
+                return 0.0
+        return 0.0
+    
+    def set_last_roar_time(self, wumpus_id, time):
+        """Set last roar timestamp"""
+        query = f"set_last_roar_time({wumpus_id}, {time})"
+        self._query(query)
+    
+    def decide_wumpus_action(self, wumpus_id, sound_type, sound_x, sound_y, loudness, current_state):
+        """
+        Decide Wumpus action based on sound
+        Returns: (new_state, should_roar, target_x, target_y) tuple
+        """
+        query = f"decide_wumpus_action({wumpus_id}, {sound_type}, {sound_x}, {sound_y}, " \
+                f"{loudness}, {current_state}, NewState, ShouldRoar, TargetX, TargetY)"
+        results = self._query(query)
+        if results:
+            try:
+                new_state = results[0]['NewState']
+                should_roar = results[0]['ShouldRoar'] == 'true'
+                target_x = results[0]['TargetX']
+                target_y = results[0]['TargetY']
+                return (new_state, should_roar, target_x, target_y)
+            except (KeyError, IndexError):
+                return (current_state, False, 0, 0)
+        return (current_state, False, 0, 0)
+    
+    def decide_no_sound_action(self, wumpus_id, current_state):
+        """
+        Decide action when no sound detected
+        Returns: (new_state, search_time) tuple
+        """
+        query = f"decide_no_sound_action({wumpus_id}, {current_state}, NewState, SearchTime)"
+        results = self._query(query)
+        if results:
+            try:
+                new_state = results[0]['NewState']
+                search_time = float(results[0]['SearchTime'])
+                return (new_state, search_time)
+            except (KeyError, IndexError, ValueError):
+                return (current_state, 0.0)
+        return (current_state, 0.0)
+    
+    def reached_target(self, wumpus_x, wumpus_y, target_x, target_y, threshold=30):
+        """Check if Wumpus reached target position"""
+        query = f"reached_target({wumpus_x}, {wumpus_y}, {target_x}, {target_y}, {threshold})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def decide_target_reached(self, wumpus_id, current_state):
+        """
+        Decide behavior when target reached
+        Returns: (new_state, search_time) tuple
+        """
+        query = f"decide_target_reached({wumpus_id}, {current_state}, NewState, SearchTime)"
+        results = self._query(query)
+        if results:
+            try:
+                new_state = results[0]['NewState']
+                search_time = float(results[0]['SearchTime'])
+                return (new_state, search_time)
+            except (KeyError, IndexError, ValueError):
+                return ('roaming', 0.0)
+        return ('roaming', 0.0)
+    
+    def search_timeout(self, wumpus_id):
+        """Check if search timer has expired"""
+        query = f"search_timeout({wumpus_id})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def can_roar(self, wumpus_id, current_time, cooldown):
+        """Check if Wumpus can roar (cooldown elapsed)"""
+        query = f"can_roar({wumpus_id}, {current_time}, {cooldown})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def should_attack(self, wumpus_x, wumpus_y, player_x, player_y, attack_range, current_state):
+        """Check if Wumpus should attack"""
+        query = f"should_attack({wumpus_x}, {wumpus_y}, {player_x}, {player_y}, {attack_range}, {current_state})"
+        results = self._query(query)
+        return len(results) > 0
+    
+    def calculate_hearing_radius(self, wumpus_id, base_hearing, chase_bonus):
+        """Calculate hearing radius based on current state"""
+        query = f"calculate_hearing_radius({wumpus_id}, {base_hearing}, {chase_bonus}, Radius)"
+        results = self._query(query)
+        if results:
+            try:
+                return float(results[0]['Radius'])
+            except (KeyError, IndexError, ValueError):
+                return float(base_hearing)
+        return float(base_hearing)

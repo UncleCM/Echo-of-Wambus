@@ -31,6 +31,14 @@ init_game :-
     retractall(cached_path(_, _, _)),
     % Clear projectile system
     init_projectile_system,
+    % Clear Wumpus AI system
+    retractall(wumpus_ai_state(_, _)),
+    retractall(wumpus_target(_, _, _)),
+    retractall(wumpus_patrol_index(_, _)),
+    retractall(wumpus_search_timer(_, _)),
+    retractall(wumpus_hearing_radius(_, _)),
+    retractall(wumpus_is_roaring(_, _)),
+    retractall(wumpus_last_roar_time(_, _)),
     asserta(game_over(false)).
 
 % Check if a point is inside a rectangle
@@ -849,17 +857,228 @@ can_use_rock :-
     Rocks > 0.
 
 % Check victory condition (has treasure + at exit)
+% Check victory condition (has treasure + at exit)
 check_victory_condition :-
     treasure_collected(true),
     exit_unlocked(true),
     player_position(PX, PY),
     exit_position(EX, EY),
-    % Check if player is at exit (within 50 pixels)
-    DX is PX - EX,
-    DY is PY - EY,
-    DistSq is DX * DX + DY * DY,
-    DistSq < 2500,  % 50 * 50
-    set_game_state(victory).
+    PlayerW = 32,
+    PlayerH = 48,
+    rects_collide(PX, PY, PlayerW, PlayerH, EX, EY, 48, 48).
+
+% ============================================================================
+% WUMPUS AI SYSTEM
+% ============================================================================
+
+% AI State Constants
+% roaming - Patrolling/wandering
+% investigating - Moving to sound source
+% chasing - Actively pursuing player
+% searching - Lost player, searching area
+% stunned - Hit by arrow
+% attack - In attack range
+% dead - Defeated
+
+:- dynamic wumpus_ai_state/2.        % wumpus_ai_state(WumpusID, State)
+:- dynamic wumpus_target/3.          % wumpus_target(WumpusID, X, Y)
+:- dynamic wumpus_patrol_index/2.    % wumpus_patrol_index(WumpusID, Index)
+:- dynamic wumpus_search_timer/2.    % wumpus_search_timer(WumpusID, TimeLeft)
+:- dynamic wumpus_hearing_radius/2.  % wumpus_hearing_radius(WumpusID, Radius)
+:- dynamic wumpus_is_roaring/2.      % wumpus_is_roaring(WumpusID, Bool)
+:- dynamic wumpus_last_roar_time/2.  % wumpus_last_roar_time(WumpusID, Time)
+
+% Initialize Wumpus AI state
+init_wumpus_ai(WumpusID, BaseHearing) :-
+    assertz(wumpus_ai_state(WumpusID, roaming)),
+    assertz(wumpus_target(WumpusID, 0, 0)),
+    assertz(wumpus_patrol_index(WumpusID, 0)),
+    assertz(wumpus_search_timer(WumpusID, 0)),
+    assertz(wumpus_hearing_radius(WumpusID, BaseHearing)),
+    assertz(wumpus_is_roaring(WumpusID, false)),
+    assertz(wumpus_last_roar_time(WumpusID, 0)).
+
+% Get Wumpus AI state
+get_wumpus_state(WumpusID, State) :-
+    wumpus_ai_state(WumpusID, State).
+
+% Set Wumpus AI state
+set_wumpus_state(WumpusID, NewState) :-
+    retractall(wumpus_ai_state(WumpusID, _)),
+    assertz(wumpus_ai_state(WumpusID, NewState)).
+
+% Get Wumpus target position
+get_wumpus_target(WumpusID, X, Y) :-
+    wumpus_target(WumpusID, X, Y).
+
+% Set Wumpus target position
+set_wumpus_target(WumpusID, X, Y) :-
+    retractall(wumpus_target(WumpusID, _, _)),
+    assertz(wumpus_target(WumpusID, X, Y)).
+
+% Get patrol waypoint index
+get_patrol_index(WumpusID, Index) :-
+    wumpus_patrol_index(WumpusID, Index).
+
+% Set patrol waypoint index
+set_patrol_index(WumpusID, Index) :-
+    retractall(wumpus_patrol_index(WumpusID, _)),
+    assertz(wumpus_patrol_index(WumpusID, Index)).
+
+% Increment patrol index (with wrap-around)
+increment_patrol_index(WumpusID, MaxWaypoints) :-
+    wumpus_patrol_index(WumpusID, Current),
+    Next is (Current + 1) mod MaxWaypoints,
+    set_patrol_index(WumpusID, Next).
+
+% Get search timer
+get_search_timer(WumpusID, Time) :-
+    wumpus_search_timer(WumpusID, Time).
+
+% Set search timer
+set_search_timer(WumpusID, Time) :-
+    retractall(wumpus_search_timer(WumpusID, _)),
+    assertz(wumpus_search_timer(WumpusID, Time)).
+
+% Update search timer (decrease by dt)
+update_search_timer(WumpusID, DT) :-
+    wumpus_search_timer(WumpusID, Time),
+    NewTime is max(0, Time - DT),
+    set_search_timer(WumpusID, NewTime).
+
+% Get hearing radius
+get_hearing_radius(WumpusID, Radius) :-
+    wumpus_hearing_radius(WumpusID, Radius).
+
+% Set hearing radius
+set_hearing_radius(WumpusID, Radius) :-
+    retractall(wumpus_hearing_radius(WumpusID, _)),
+    assertz(wumpus_hearing_radius(WumpusID, Radius)).
+
+% Check if Wumpus is roaring
+is_roaring(WumpusID) :-
+    wumpus_is_roaring(WumpusID, true).
+
+% Set roaring state
+set_roaring(WumpusID, Bool) :-
+    retractall(wumpus_is_roaring(WumpusID, _)),
+    assertz(wumpus_is_roaring(WumpusID, Bool)).
+
+% Get last roar time
+get_last_roar_time(WumpusID, Time) :-
+    wumpus_last_roar_time(WumpusID, Time).
+
+% Set last roar time
+set_last_roar_time(WumpusID, Time) :-
+    retractall(wumpus_last_roar_time(WumpusID, _)),
+    assertz(wumpus_last_roar_time(WumpusID, Time)).
+
+% ============================================================================
+% WUMPUS AI DECISION LOGIC
+% ============================================================================
+
+% Decide action based on sound detection
+% Returns: NewState, ShouldRoar, NewTarget(X,Y)
+decide_wumpus_action(WumpusID, SoundType, SoundX, SoundY, Loudness, CurrentState, 
+                     NewState, ShouldRoar, TargetX, TargetY) :-
+    % Rock impact - LOUD distraction
+    (SoundType = rock_impact ->
+        NewState = investigating,
+        ShouldRoar = false,
+        TargetX = SoundX,
+        TargetY = SoundY
+    ;
+    % Player sounds (walk, dash, arrow)
+    (member(SoundType, [walk, dash, arrow_shot]) ->
+        (Loudness > 30 ->
+            % Loud enough to chase
+            NewState = chasing,
+            ShouldRoar = true,
+            TargetX = SoundX,
+            TargetY = SoundY
+        ;
+            % Faint - just investigate
+            NewState = investigating,
+            ShouldRoar = false,
+            TargetX = SoundX,
+            TargetY = SoundY
+        )
+    ;
+        % No relevant sound - keep current state
+        NewState = CurrentState,
+        ShouldRoar = false,
+        TargetX = 0,
+        TargetY = 0
+    )).
+
+% Decide action when no sound detected
+decide_no_sound_action(WumpusID, CurrentState, NewState, SearchTime) :-
+    % If chasing but lost sound, switch to searching
+    (CurrentState = chasing ->
+        NewState = searching,
+        SearchTime = 8.0
+    ;
+    % If investigating and lost sound, also search
+    (CurrentState = investigating ->
+        NewState = searching,
+        SearchTime = 5.0
+    ;
+        % Otherwise keep current state
+        NewState = CurrentState,
+        SearchTime = 0
+    )).
+
+% Check if Wumpus reached target position
+reached_target(WumpusX, WumpusY, TargetX, TargetY, Threshold) :-
+    distance_squared(WumpusX, WumpusY, TargetX, TargetY, DistSq),
+    ThresholdSq is Threshold * Threshold,
+    DistSq =< ThresholdSq.
+
+% Decide behavior when target reached
+decide_target_reached(WumpusID, CurrentState, NewState, SearchTime) :-
+    % Investigating - arrived at sound location, start searching
+    (CurrentState = investigating ->
+        NewState = searching,
+        SearchTime = 5.0
+    ;
+    % Chasing - lost player at last position, start searching
+    (CurrentState = chasing ->
+        NewState = searching,
+        SearchTime = 8.0
+    ;
+        % Other states - return to roaming
+        NewState = roaming,
+        SearchTime = 0
+    )).
+
+% Check if search timer expired
+search_timeout(WumpusID) :-
+    wumpus_search_timer(WumpusID, Time),
+    Time =< 0.
+
+% Check if Wumpus can roar (cooldown check)
+can_roar(WumpusID, CurrentTime, Cooldown) :-
+    wumpus_last_roar_time(WumpusID, LastTime),
+    TimeSince is CurrentTime - LastTime,
+    TimeSince >= Cooldown.
+
+% Check if Wumpus should transition to attack state
+should_attack(WumpusX, WumpusY, PlayerX, PlayerY, AttackRange, CurrentState) :-
+    % Must be chasing
+    CurrentState = chasing,
+    % Must be within attack range
+    distance_squared(WumpusX, WumpusY, PlayerX, PlayerY, DistSq),
+    RangeSq is AttackRange * AttackRange,
+    DistSq =< RangeSq.
+
+% Calculate enhanced hearing during chase
+calculate_hearing_radius(WumpusID, BaseHearing, ChaseBonus, Radius) :-
+    wumpus_ai_state(WumpusID, State),
+    (State = chasing ->
+        Radius is BaseHearing + ChaseBonus
+    ;
+        Radius = BaseHearing
+    ).
 
 % Check all game over conditions
 check_game_over_conditions :-

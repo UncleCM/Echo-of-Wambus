@@ -14,12 +14,19 @@ class WumpusAIState:
 
 class Wumpus(Entity):
     """Wumpus enemy - Sound-based AI hunter with complete map knowledge"""
+    
+    # Class variable to track Wumpus IDs
+    _next_id = 1
 
     def __init__(self, pos, groups, collision_sprites, prolog_engine=None, map_knowledge=None, sound_manager=None):
         # Initialize base Entity
         super().__init__(
             pos, groups, collision_sprites, prolog_engine, entity_type="wumpus"
         )
+
+        # Assign unique ID for Prolog tracking
+        self.wumpus_id = Wumpus._next_id
+        Wumpus._next_id += 1
 
         # Core systems
         self.map_knowledge = map_knowledge  # Complete map awareness
@@ -45,18 +52,22 @@ class Wumpus(Entity):
         self.stun_timer = 0
         self.stun_duration = ARROW_STUN_DURATION  # From Settings.py
 
-        # Sound-based AI state
+        # Sound-based AI state (synchronized with Prolog)
         self.ai_state = WumpusAIState.ROAMING
         self.target_position = None  # Where Wumpus is heading
         self.last_heard_sound = None  # Last detected sound
         self.roaming_target = None  # Current roaming destination
-        self.search_timer = 0  # Time left searching
+        self.search_timer = 0  # Time left searching (synced with Prolog)
 
         # Patrol route system
         self.patrol_route = []  # List of waypoints for patrol
         self.current_waypoint_index = 0  # Current waypoint in patrol route
         self.patrol_mode = True  # Whether using patrol route or random roaming
         self._setup_patrol_route()  # Initialize patrol route
+        
+        # Initialize AI in Prolog
+        if self.prolog and self.prolog.available:
+            self.prolog.init_wumpus_ai(self.wumpus_id, self.hearing_radius)
         
         # A* pathfinding
         self.current_path = None  # Current A* path being followed
@@ -236,6 +247,7 @@ class Wumpus(Entity):
     def ai_update(self, player_pos, dt):
         """
         Sound-based AI update - Wumpus reacts to sounds, not direct vision
+        Uses Prolog for all AI decision-making
         
         Args:
             player_pos: Player position (for attack range check only, NOT detection)
@@ -244,6 +256,19 @@ class Wumpus(Entity):
         if not self.is_alive or self.is_stunned:
             return
 
+        # Sync current state with Prolog
+        if self.prolog and self.prolog.available:
+            # Get state from Prolog (authoritative)
+            prolog_state = self.prolog.get_wumpus_state(self.wumpus_id)
+            self.ai_state = prolog_state
+            
+            # Update hearing radius based on state
+            self.current_hearing_radius = self.prolog.calculate_hearing_radius(
+                self.wumpus_id,
+                self.hearing_radius,
+                self.chase_hearing_bonus
+            )
+
         # Listen for sounds
         if self.sound_manager:
             loudest_sound, loudness = self.sound_manager.get_loudest_sound(
@@ -251,11 +276,11 @@ class Wumpus(Entity):
                 min_threshold=10.0
             )
             
-            # React to detected sound
+            # React to detected sound (Prolog decides action)
             if loudest_sound and loudness > 0:
-                self._handle_sound_detected(loudest_sound, loudness)
+                self._handle_sound_detected_prolog(loudest_sound, loudness)
             else:
-                self._handle_no_sound()
+                self._handle_no_sound_prolog()
         
         # Execute behavior based on current state
         if self.ai_state == WumpusAIState.ROAMING:
@@ -265,17 +290,108 @@ class Wumpus(Entity):
         elif self.ai_state == WumpusAIState.CHASING:
             self._behavior_chasing()
         elif self.ai_state == WumpusAIState.SEARCHING:
-            self._behavior_searching(dt)
+            self._behavior_searching_prolog(dt)
         elif self.ai_state == WumpusAIState.STUNNED:
             # Just stay still
             self.direction = pygame.math.Vector2(0, 0)
         
-        # Check if in attack range (proximity-based, not sound)
-        distance_to_player = self.pos.distance_to(pygame.math.Vector2(player_pos))
-        if distance_to_player <= self.attack_range and self.ai_state == WumpusAIState.CHASING:
-            # Player is very close - attack!
-            self.ai_state = "attack"
-            self.direction = pygame.math.Vector2(0, 0)
+        # Check if in attack range (Prolog decides if should attack)
+        if self.prolog and self.prolog.available:
+            should_attack = self.prolog.should_attack(
+                int(self.pos.x), int(self.pos.y),
+                int(player_pos[0]), int(player_pos[1]),
+                self.attack_range,
+                self.ai_state
+            )
+            if should_attack:
+                self.ai_state = "attack"
+                self.prolog.set_wumpus_state(self.wumpus_id, "attack")
+                self.direction = pygame.math.Vector2(0, 0)
+        else:
+            # Fallback: distance check
+            distance_to_player = self.pos.distance_to(pygame.math.Vector2(player_pos))
+            if distance_to_player <= self.attack_range and self.ai_state == WumpusAIState.CHASING:
+                self.ai_state = "attack"
+                self.direction = pygame.math.Vector2(0, 0)
+    
+    def _handle_sound_detected_prolog(self, sound, loudness):
+        """React to detected sound using Prolog decision logic"""
+        if not self.prolog or not self.prolog.available:
+            # Fallback to old logic
+            self._handle_sound_detected(sound, loudness)
+            return
+        
+        # Ask Prolog what to do
+        new_state, should_roar, target_x, target_y = self.prolog.decide_wumpus_action(
+            self.wumpus_id,
+            sound.source_type,
+            int(sound.position.x),
+            int(sound.position.y),
+            loudness,
+            self.ai_state
+        )
+        
+        # Apply Prolog's decision
+        if new_state != self.ai_state:
+            print(f"[Wumpus {self.wumpus_id}] Heard {sound.source_type} (loudness: {loudness:.1f})! {self.ai_state} → {new_state}")
+            self.ai_state = new_state
+            self.prolog.set_wumpus_state(self.wumpus_id, new_state)
+            
+            # Set target if provided
+            if target_x != 0 or target_y != 0:
+                self.target_position = pygame.math.Vector2(target_x, target_y)
+                self.prolog.set_wumpus_target(self.wumpus_id, target_x, target_y)
+                self.current_path = None  # Clear path when changing target
+                self.path_index = 0
+            
+            # Roar if Prolog says so
+            if should_roar:
+                self._trigger_roar()
+    
+    def _handle_no_sound_prolog(self):
+        """No sound detected - use Prolog to decide action"""
+        if not self.prolog or not self.prolog.available:
+            # Fallback to old logic
+            self._handle_no_sound()
+            return
+        
+        # Ask Prolog what to do when no sound detected
+        new_state, search_time = self.prolog.decide_no_sound_action(
+            self.wumpus_id,
+            self.ai_state
+        )
+        
+        # Apply Prolog's decision
+        if new_state != self.ai_state:
+            print(f"[Wumpus {self.wumpus_id}] No sound detected. {self.ai_state} → {new_state}")
+            self.ai_state = new_state
+            self.prolog.set_wumpus_state(self.wumpus_id, new_state)
+            
+            if search_time > 0:
+                self.search_timer = search_time
+                self.prolog.set_search_timer(self.wumpus_id, search_time)
+                self.current_path = None
+                self.path_index = 0
+    
+    def _behavior_searching_prolog(self, dt):
+        """Search around last known position using Prolog timer"""
+        if self.prolog and self.prolog.available:
+            # Update timer in Prolog
+            self.prolog.update_search_timer(self.wumpus_id, dt)
+            
+            # Check if timeout
+            if self.prolog.search_timeout(self.wumpus_id):
+                # Give up, return to roaming
+                self.ai_state = WumpusAIState.ROAMING
+                self.prolog.set_wumpus_state(self.wumpus_id, WumpusAIState.ROAMING)
+                self.current_hearing_radius = self.hearing_radius
+                self.prolog.set_hearing_radius(self.wumpus_id, self.hearing_radius)
+                self.is_roaring = False
+                self.prolog.set_roaring(self.wumpus_id, False)
+                print(f"[Wumpus {self.wumpus_id}] Search timeout... resuming roaming")
+        else:
+            # Fallback to old behavior
+            self._behavior_searching(dt)
     
     def _handle_sound_detected(self, sound, loudness):
         """React to detected sound"""
@@ -389,104 +505,152 @@ class Wumpus(Entity):
     
     def _behavior_investigating(self):
         """Move to sound source location using A* pathfinding"""
-        if self._reached_target():
-            # Reached source, nothing here - start searching
+        # Check if reached target using Prolog
+        if self.target_position and self.prolog and self.prolog.available:
+            reached = self.prolog.reached_target(
+                int(self.pos.x), int(self.pos.y),
+                int(self.target_position.x), int(self.target_position.y),
+                30
+            )
+            if reached:
+                # Ask Prolog what to do when target reached
+                new_state, search_time = self.prolog.decide_target_reached(
+                    self.wumpus_id,
+                    self.ai_state
+                )
+                self.ai_state = new_state
+                self.prolog.set_wumpus_state(self.wumpus_id, new_state)
+                if search_time > 0:
+                    self.search_timer = search_time
+                    self.prolog.set_search_timer(self.wumpus_id, search_time)
+                self.current_path = None
+                print(f"[Wumpus {self.wumpus_id}] Reached sound location → {new_state}")
+                return
+        elif self._reached_target():
+            # Fallback without Prolog
             self.ai_state = WumpusAIState.SEARCHING
             self.search_timer = 5.0
             self.current_path = None
             print("[Wumpus] Reached sound location, nothing here... searching")
-        else:
-            # Use A* to navigate to sound location
-            if self.map_knowledge and self.target_position:
-                # Calculate path if we don't have one
-                if not self.current_path or self.path_index >= len(self.current_path):
-                    self.current_path = self.map_knowledge.find_path_astar(
-                        (self.pos.x, self.pos.y),
-                        (self.target_position.x, self.target_position.y)
-                    )
-                    self.path_index = 0
+            return
+        
+        # Use A* to navigate to sound location
+        if self.map_knowledge and self.target_position:
+            # Calculate path if we don't have one
+            if not self.current_path or self.path_index >= len(self.current_path):
+                self.current_path = self.map_knowledge.find_path_astar(
+                    (self.pos.x, self.pos.y),
+                    (self.target_position.x, self.target_position.y)
+                )
+                self.path_index = 0
+            
+            # Follow path
+            if self.current_path and self.path_index < len(self.current_path):
+                next_pos = pygame.math.Vector2(self.current_path[self.path_index])
                 
-                # Follow path
-                if self.current_path and self.path_index < len(self.current_path):
-                    next_pos = pygame.math.Vector2(self.current_path[self.path_index])
-                    
-                    # Check if reached current path node
-                    if self.pos.distance_to(next_pos) < 20:
-                        self.path_index += 1
-                    
-                    # Move towards next path node
-                    if self.path_index < len(self.current_path):
-                        direction = pygame.math.Vector2(self.current_path[self.path_index]) - self.pos
-                    else:
-                        direction = self.target_position - self.pos
-                    
-                    if direction.length() > 0:
-                        self.direction = direction.normalize()
+                # Check if reached current path node
+                if self.pos.distance_to(next_pos) < 20:
+                    self.path_index += 1
+                
+                # Move towards next path node
+                if self.path_index < len(self.current_path):
+                    direction = pygame.math.Vector2(self.current_path[self.path_index]) - self.pos
                 else:
-                    # No path found, move directly
-                    direction = (self.target_position - self.pos)
-                    if direction.length() > 0:
-                        self.direction = direction.normalize()
+                    direction = self.target_position - self.pos
+                
+                if direction.length() > 0:
+                    self.direction = direction.normalize()
             else:
-                # No map knowledge, move directly
+                # No path found, move directly
                 direction = (self.target_position - self.pos)
                 if direction.length() > 0:
                     self.direction = direction.normalize()
+        else:
+            # No map knowledge, move directly
+            direction = (self.target_position - self.pos)
+            if direction.length() > 0:
+                self.direction = direction.normalize()
     
     def _behavior_chasing(self):
         """Chase last heard player sound using A* pathfinding"""
-        if self._reached_target():
-            # Lost player at last known position
+        # Check if reached target using Prolog
+        if self.target_position and self.prolog and self.prolog.available:
+            reached = self.prolog.reached_target(
+                int(self.pos.x), int(self.pos.y),
+                int(self.target_position.x), int(self.target_position.y),
+                30
+            )
+            if reached:
+                # Ask Prolog what to do when target reached
+                new_state, search_time = self.prolog.decide_target_reached(
+                    self.wumpus_id,
+                    self.ai_state
+                )
+                self.ai_state = new_state
+                self.prolog.set_wumpus_state(self.wumpus_id, new_state)
+                if search_time > 0:
+                    self.search_timer = search_time
+                    self.prolog.set_search_timer(self.wumpus_id, search_time)
+                self.is_roaring = False
+                self.prolog.set_roaring(self.wumpus_id, False)
+                self.current_hearing_radius = self.hearing_radius
+                self.prolog.set_hearing_radius(self.wumpus_id, self.hearing_radius)
+                self.current_path = None
+                print(f"[Wumpus {self.wumpus_id}] Lost player → {new_state}")
+                return
+        elif self._reached_target():
+            # Fallback without Prolog
             self.ai_state = WumpusAIState.SEARCHING
             self.search_timer = 8.0
             self.is_roaring = False
-            self.current_hearing_radius = self.hearing_radius  # Reset hearing
+            self.current_hearing_radius = self.hearing_radius
             self.current_path = None
             print("[Wumpus] Lost player... searching")
-        else:
-            # Use A* to chase player
-            if self.map_knowledge and self.target_position:
-                # Recalculate path frequently during chase (every few frames)
-                if not hasattr(self, '_chase_path_timer'):
-                    self._chase_path_timer = 0
+            return
+        
+        # Use A* to chase player
+        if self.map_knowledge and self.target_position:
+            # Recalculate path frequently during chase (every few frames)
+            if not hasattr(self, '_chase_path_timer'):
+                self._chase_path_timer = 0
+            
+            self._chase_path_timer += 1
+            
+            # Recalculate path every 30 frames (~0.5 seconds at 60fps)
+            if not self.current_path or self._chase_path_timer >= 30:
+                self.current_path = self.map_knowledge.find_path_astar(
+                    (self.pos.x, self.pos.y),
+                    (self.target_position.x, self.target_position.y)
+                )
+                self.path_index = 0
+                self._chase_path_timer = 0
+            
+            # Follow path
+            if self.current_path and self.path_index < len(self.current_path):
+                next_pos = pygame.math.Vector2(self.current_path[self.path_index])
                 
-                self._chase_path_timer += 1
+                # Check if reached current path node
+                if self.pos.distance_to(next_pos) < 20:
+                    self.path_index += 1
                 
-                # Recalculate path every 30 frames (~0.5 seconds at 60fps)
-                if not self.current_path or self._chase_path_timer >= 30:
-                    self.current_path = self.map_knowledge.find_path_astar(
-                        (self.pos.x, self.pos.y),
-                        (self.target_position.x, self.target_position.y)
-                    )
-                    self.path_index = 0
-                    self._chase_path_timer = 0
-                
-                # Follow path
-                if self.current_path and self.path_index < len(self.current_path):
-                    next_pos = pygame.math.Vector2(self.current_path[self.path_index])
-                    
-                    # Check if reached current path node
-                    if self.pos.distance_to(next_pos) < 20:
-                        self.path_index += 1
-                    
-                    # Move towards next path node
-                    if self.path_index < len(self.current_path):
-                        direction = pygame.math.Vector2(self.current_path[self.path_index]) - self.pos
-                    else:
-                        direction = self.target_position - self.pos
-                    
-                    if direction.length() > 0:
-                        self.direction = direction.normalize()
+                # Move towards next path node
+                if self.path_index < len(self.current_path):
+                    direction = pygame.math.Vector2(self.current_path[self.path_index]) - self.pos
                 else:
-                    # No path found, move directly
-                    direction = (self.target_position - self.pos)
-                    if direction.length() > 0:
-                        self.direction = direction.normalize()
+                    direction = self.target_position - self.pos
+                
+                if direction.length() > 0:
+                    self.direction = direction.normalize()
             else:
-                # No map knowledge, move directly
+                # No path found, move directly
                 direction = (self.target_position - self.pos)
                 if direction.length() > 0:
                     self.direction = direction.normalize()
+        else:
+            # No map knowledge, move directly
+            direction = (self.target_position - self.pos)
+            if direction.length() > 0:
+                self.direction = direction.normalize()
     
     def _behavior_searching(self, dt):
         """Search around last known position"""
@@ -513,12 +677,27 @@ class Wumpus(Entity):
                 self.direction = pygame.math.Vector2(1, 0).rotate(angle)
     
     def _trigger_roar(self):
-        """Roar when starting chase - increases hearing radius"""
+        """Roar when starting chase - increases hearing radius (uses Prolog for cooldown check)"""
         current_time = pygame.time.get_ticks()
-        if current_time - self.last_roar_time > self.roar_cooldown:
+        
+        # Check if can roar using Prolog
+        can_roar = True
+        if self.prolog and self.prolog.available:
+            can_roar = self.prolog.can_roar(self.wumpus_id, current_time, self.roar_cooldown)
+        else:
+            # Fallback: manual check
+            can_roar = (current_time - self.last_roar_time > self.roar_cooldown)
+        
+        if can_roar:
             self.is_roaring = True
             self.current_hearing_radius = self.hearing_radius + self.chase_hearing_bonus
             self.last_roar_time = current_time
+            
+            # Update Prolog state
+            if self.prolog and self.prolog.available:
+                self.prolog.set_roaring(self.wumpus_id, True)
+                self.prolog.set_hearing_radius(self.wumpus_id, self.current_hearing_radius)
+                self.prolog.set_last_roar_time(self.wumpus_id, current_time)
             
             # Emit roar sound event (for AI detection)
             if self.sound_manager:
@@ -532,7 +711,7 @@ class Wumpus(Entity):
                 # Play actual roar sound effect
                 self.sound_manager.play_sound('roar', volume=0.5)
             
-            print(f"[Wumpus] ROAR! Hearing increased to {self.current_hearing_radius}px")
+            print(f"[Wumpus {self.wumpus_id}] ROAR! Hearing increased to {self.current_hearing_radius}px")
     
     def _reached_target(self, threshold=30):
         """Check if reached target position"""
