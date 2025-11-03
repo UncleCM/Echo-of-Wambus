@@ -177,38 +177,72 @@ class Entity(pygame.sprite.Sprite):
     
     def take_damage(self, amount):
         """
-        Apply damage to entity
-        Returns the actual damage dealt
+        Request damage from Prolog (authoritative source).
+        This is just a UI-side method that delegates to Prolog for actual damage calculation.
+        Returns the actual damage dealt by Prolog.
         """
         if not self.is_alive:
             return 0
         
-        actual_damage = min(amount, self.health)
-        self.health -= amount
-        
-        if self.health <= 0:
-            self.health = 0
-            self.is_alive = False
-            self.on_death()
-        
-        # Update Prolog if this is the player
+        # =========================================================================
+        # PROLOG IS AUTHORITATIVE - Ask Prolog to apply damage, don't calculate here
+        # =========================================================================
         if self.entity_type == "player" and self.prolog and self.prolog.available:
-            self.prolog.damage_player(int(actual_damage))
-        
-        return actual_damage
+            try:
+                # Let Prolog decide actual damage (it handles min/max, armor, etc.)
+                actual_damage = self.prolog.damage_player(int(amount))
+                
+                # Sync Python's display value with Prolog's authoritative value
+                new_health = self.prolog.get_player_health()
+                self.health = new_health
+                
+                # Update death state based on Prolog's health value
+                if self.health <= 0:
+                    self.health = 0
+                    self.is_alive = False
+                    self.on_death()
+                
+                return actual_damage
+            except Exception as e:
+                print(f"[Entity] Prolog damage failed: {e}")
+                return 0
+        else:
+            # Fallback for non-player entities or when Prolog unavailable
+            # (Wumpus health is managed separately, so this is mainly for safety)
+            actual_damage = min(amount, self.health)
+            self.health -= actual_damage
+            
+            if self.health <= 0:
+                self.health = 0
+                self.is_alive = False
+                self.on_death()
+            
+            return actual_damage
     
     def heal(self, amount):
         """
-        Heal entity
+        Request healing from Prolog (authoritative source).
+        This is just a UI-side method that delegates to Prolog for actual healing.
         """
         if not self.is_alive:
             return
         
-        self.health = min(self.health + amount, self.max_health)
-        
-        # Update Prolog if this is the player
+        # =========================================================================
+        # PROLOG IS AUTHORITATIVE - Ask Prolog to apply healing
+        # =========================================================================
         if self.entity_type == "player" and self.prolog and self.prolog.available:
-            self.prolog.heal_player(int(amount))
+            try:
+                # Let Prolog decide actual healing (it handles max health cap)
+                self.prolog.heal_player(int(amount))
+                
+                # Sync Python's display value with Prolog's authoritative value
+                new_health = self.prolog.get_player_health()
+                self.health = new_health
+            except Exception as e:
+                print(f"[Entity] Prolog heal failed: {e}")
+        else:
+            # Fallback for non-player entities or when Prolog unavailable
+            self.health = min(self.health + amount, self.max_health)
     
     def on_death(self):
         """
